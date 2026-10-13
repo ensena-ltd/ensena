@@ -1,0 +1,405 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-poppins);
+  --color-ensena-primary: var(--ensena-primary);
+  --color-ensena-secondary: var(--ensena-secondary);
+  --color-ensena-accent: var(--ensena-accent);
+  --color-ensena-ink: var(--ensena-ink);
+  --color-ensena-muted: var(--ensena-muted);
+  --color-ensena-border: var(--ensena-border);
+  --color-ensena-success: var(--ensena-success);
+  --color-ensena-warning: var(--ensena-warning);
+  --color-ensena-danger: var(--ensena-danger);
+  --color-ensena-link: var(--ensena-link);
+  --color-ensena-bg-soft: var(--ensena-bg-soft);
+  --color-ensena-cta-from: var(--ensena-cta-from);
+  --color-ensena-cta-to: var(--ensena-cta-to);
+  --color-ensena-primary-hover: var(--ensena-primary-hover);
+  --color-ensena-primary-active: var(--ensena-primary-active);
+  --color-ensena-info: var(--ensena-info);
+  --color-ensena-escrow-tint: var(--ensena-escrow-tint);
+  /* Overrides Tailwind's built-in `rose` palette with the Ensena brand scale
+     (see --rose-* below) so every existing rose-* utility class across the
+     app — not just components that reference --color-ensena-primary — picks
+     up the real brand color instead of stock Tailwind pink. */
+  --color-rose-50: var(--rose-50);
+  --color-rose-100: var(--rose-100);
+  --color-rose-200: var(--rose-200);
+  --color-rose-300: var(--rose-300);
+  --color-rose-400: var(--rose-400);
+  --color-rose-500: var(--rose-500);
+  --color-rose-600: var(--rose-600);
+  --color-rose-700: var(--rose-700);
+  --color-rose-800: var(--rose-800);
+  --color-rose-900: var(--rose-900);
+  --color-rose-950: var(--rose-950);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  /* Dedicated "surface" tokens — the app's own convention is a literal
+     white card floating on a soft page background; dark mode needs the
+     same two-level hierarchy inverted, plus one more "elevated" level for
+     things that sit above a card (modals, dropdowns, popovers). Kept
+     separate from shadcn's own --card so existing shadcn-based components
+     (Button/Input/Select) are untouched while the rest of the app (which
+     almost never referenced --card) gets a real token to migrate onto
+     instead of the literal `bg-white` it was using. */
+  --color-ensena-surface: var(--ensena-surface);
+  --color-ensena-surface-elevated: var(--ensena-surface-elevated);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #2e2e3a;
+  --card: #ffffff;
+  --card-foreground: #2e2e3a;
+  --popover: #ffffff;
+  --popover-foreground: #2e2e3a;
+  --primary: #f80248;
+  --primary-foreground: #ffffff;
+  --secondary: #cbefff;
+  --secondary-foreground: #2e2e3a;
+  --muted: #f8fafc;
+  --muted-foreground: #717171;
+  --accent: #cbefff;
+  --accent-foreground: #2e2e3a;
+  --destructive: #ef4444;
+  --border: #eaecef;
+  --input: #eaecef;
+  --ring: #f80248;
+  --chart-1: #f80248;
+  --chart-2: #22c55e;
+  --chart-3: #8b5cf6;
+  --chart-4: #f59e0b;
+  --chart-5: #717171;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #2e2e3a;
+  --sidebar-primary: #f80248;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(248, 2, 72, 0.08);
+  --sidebar-accent-foreground: #f80248;
+  --sidebar-border: #eaecef;
+  --sidebar-ring: #f80248;
+
+  /* Ensena brand scale — a full Tailwind-style 50-950 ramp anchored on the
+     official primary #F80248 (pinned exactly at the 600 stop, which is
+     where the app's heaviest usage — bg-rose-600 buttons — already sat).
+     Overrides Tailwind's stock "rose" palette above, so any rose-colored
+     utility class anywhere in the app automatically renders in the real
+     brand color instead of stock Tailwind pink. */
+  --rose-50: #fef0f3;
+  --rose-100: #fddde4;
+  --rose-200: #fdb9c8;
+  --rose-300: #fd86a0;
+  --rose-400: #fe4870;
+  --rose-500: #fe2050;
+  --rose-600: #f80248; /* = brand primary */
+  --rose-700: #cb012d;
+  --rose-800: #a20728;
+  --rose-900: #800a23;
+  --rose-950: #450815;
+
+  /* Ensena brand system — primary #F80248 (finalized) */
+  --ensena-primary: #f80248;
+  --ensena-primary-hover: #cb012d; /* --rose-700 */
+  --ensena-primary-active: #a20728; /* --rose-800 */
+  --ensena-secondary: #cbefff; /* Soft Blue — info cards, empty states, student highlights, calendar */
+  --ensena-accent: #cbefff;
+  --ensena-ink: #2e2e3a;
+  --ensena-muted: #717171;
+  --ensena-border: #eaecef;
+  --ensena-success: #22c55e;
+  --ensena-warning: #f59e0b;
+  --ensena-danger: #ef4444;
+  --ensena-info: #3b82f6;
+  --ensena-link: #f80248; /* brand color now covers links per the finalized rule set */
+  --ensena-bg-soft: #f8fafc;
+  --ensena-escrow-tint: rgba(248, 2, 72, 0.08);
+  --ensena-cta-from: #f80248;
+  --ensena-cta-to: #f80248;
+
+  /* Light mode: identical to the card white every existing "card" div
+     already hardcodes, so migrating a component from `bg-white` to
+     `bg-ensena-surface` is a visual no-op in light mode. */
+  --ensena-surface: #ffffff;
+  --ensena-surface-elevated: #ffffff;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0f1117;
+  --foreground: #e8e9ee;
+  --card: #171a21;
+  --card-foreground: #e8e9ee;
+  --popover: #1f232c;
+  --popover-foreground: #e8e9ee;
+  --primary: #f80248;
+  --primary-foreground: #ffffff;
+  --secondary: #12324a;
+  --secondary-foreground: #e8e9ee;
+  --muted: #1f232c;
+  --muted-foreground: #9aa0ad;
+  --accent: #12324a;
+  --accent-foreground: #e8e9ee;
+  --destructive: #f87171;
+  --border: #2a2e38;
+  --input: #2a2e38;
+  --ring: #f80248;
+  --chart-1: #f80248;
+  --chart-2: #22c55e;
+  --chart-3: #a78bfa;
+  --chart-4: #f59e0b;
+  --chart-5: #9aa0ad;
+  --sidebar: #171a21;
+  --sidebar-foreground: #e8e9ee;
+  --sidebar-primary: #f80248;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(248, 2, 72, 0.16);
+  --sidebar-accent-foreground: #ff5c85;
+  --sidebar-border: #2a2e38;
+  --sidebar-ring: #f80248;
+
+  /* Ensena tokens, dark: same hierarchy as light mode (soft page
+     background, surface cards, elevated overlays), inverted. */
+  --ensena-secondary: #12324a;
+  --ensena-accent: #12324a;
+  --ensena-ink: #e8e9ee;
+  --ensena-muted: #9aa0ad;
+  --ensena-border: #2a2e38;
+  --ensena-bg-soft: #0f1117;
+  --ensena-escrow-tint: rgba(248, 2, 72, 0.16);
+  --ensena-surface: #171a21;
+  --ensena-surface-elevated: #1f232c;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Global motion system
+   -----------------------------------------------------------------------
+   One shared timing/easing convention so every component (existing and
+   new) reads as the same product rather than each screen inventing its
+   own animation:
+     - 150ms  micro-interactions: hover/press feedback, icon color swaps.
+     - 200ms  standard overlays: modals, drawers/sheets, toasts, the
+              branded route-loading bar. Matches src/components/ui/modal.tsx.
+     - ease-out for anything ENTERING (starts fast, settles — feels responsive).
+     - ease-in for anything LEAVING (starts slow, accelerates away).
+   src/components/ui/select.tsx's Base-UI-driven dropdown already got a
+   good enter/exit for free (100ms, animate-in/animate-out) before this
+   system existed — left as-is rather than fighting a working pattern.
+   ----------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 1.2s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------
+   Dark theme (Settings → Theme). <html class="dark"> is set before first
+   paint by the inline script in src/app/layout.tsx, on the signed-in
+   dashboards only. The token swap above handles everything built on
+   --ensena-* / shadcn tokens; the rules below remap the literal colour
+   utilities (bg-white cards, pale status tints, a few hex colours) that
+   predate the tokens, so existing screens don't need rewriting.
+   ----------------------------------------------------------------------- */
+.dark body {
+  background-color: var(--ensena-bg-soft);
+  color: var(--ensena-ink);
+}
+.dark .bg-white,
+.dark .bg-white\/95,
+.dark .bg-white\/90,
+.dark .bg-white\/85 {
+  background-color: var(--ensena-surface);
+}
+.dark .bg-white\/70,
+.dark .bg-white\/60 {
+  background-color: color-mix(in srgb, var(--ensena-surface) 80%, transparent);
+}
+.dark .hover\:bg-white:hover {
+  background-color: var(--ensena-surface-elevated);
+}
+.dark .border-white {
+  border-color: var(--ensena-surface);
+}
+.dark .ring-white {
+  --tw-ring-color: var(--ensena-surface);
+}
+.dark .bg-slate-50,
+.dark .bg-slate-100,
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: #232733;
+}
+.dark .text-slate-500,
+.dark .text-slate-600,
+.dark .text-slate-700,
+.dark .text-gray-500,
+.dark .text-gray-600,
+.dark .text-gray-700 {
+  color: #a1a7b3;
+}
+.dark .text-black {
+  color: var(--ensena-ink);
+}
+.dark .bg-\[\#CBEFFF\] {
+  background-color: #12324a;
+}
+.dark .text-\[\#1E7BA6\] {
+  color: #7cc4e8;
+}
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark textarea,
+.dark select {
+  color: var(--ensena-ink);
+}
+.dark select option {
+  background-color: var(--ensena-surface-elevated);
+}
+.dark .bg-emerald-50 { background-color: color-mix(in srgb, #10b981 12%, transparent); }
+.dark .bg-emerald-100 { background-color: color-mix(in srgb, #10b981 18%, transparent); }
+.dark .bg-emerald-200 { background-color: color-mix(in srgb, #10b981 26%, transparent); }
+.dark .border-emerald-100, .dark .border-emerald-200 { border-color: color-mix(in srgb, #10b981 35%, transparent); }
+.dark .text-emerald-600, .dark .text-emerald-700, .dark .text-emerald-800, .dark .text-emerald-900 { color: #6ee7b7; }
+.dark .bg-green-50 { background-color: color-mix(in srgb, #22c55e 12%, transparent); }
+.dark .bg-green-100 { background-color: color-mix(in srgb, #22c55e 18%, transparent); }
+.dark .bg-green-200 { background-color: color-mix(in srgb, #22c55e 26%, transparent); }
+.dark .border-green-100, .dark .border-green-200 { border-color: color-mix(in srgb, #22c55e 35%, transparent); }
+.dark .text-green-600, .dark .text-green-700, .dark .text-green-800, .dark .text-green-900 { color: #86efac; }
+.dark .bg-amber-50 { background-color: color-mix(in srgb, #f59e0b 12%, transparent); }
+.dark .bg-amber-100 { background-color: color-mix(in srgb, #f59e0b 18%, transparent); }
+.dark .bg-amber-200 { background-color: color-mix(in srgb, #f59e0b 26%, transparent); }
+.dark .border-amber-100, .dark .border-amber-200 { border-color: color-mix(in srgb, #f59e0b 35%, transparent); }
+.dark .text-amber-600, .dark .text-amber-700, .dark .text-amber-800, .dark .text-amber-900 { color: #fcd34d; }
+.dark .bg-yellow-50 { background-color: color-mix(in srgb, #eab308 12%, transparent); }
+.dark .bg-yellow-100 { background-color: color-mix(in srgb, #eab308 18%, transparent); }
+.dark .bg-yellow-200 { background-color: color-mix(in srgb, #eab308 26%, transparent); }
+.dark .border-yellow-100, .dark .border-yellow-200 { border-color: color-mix(in srgb, #eab308 35%, transparent); }
+.dark .text-yellow-600, .dark .text-yellow-700, .dark .text-yellow-800, .dark .text-yellow-900 { color: #fde047; }
+.dark .bg-orange-50 { background-color: color-mix(in srgb, #f97316 12%, transparent); }
+.dark .bg-orange-100 { background-color: color-mix(in srgb, #f97316 18%, transparent); }
+.dark .bg-orange-200 { background-color: color-mix(in srgb, #f97316 26%, transparent); }
+.dark .border-orange-100, .dark .border-orange-200 { border-color: color-mix(in srgb, #f97316 35%, transparent); }
+.dark .text-orange-600, .dark .text-orange-700, .dark .text-orange-800, .dark .text-orange-900 { color: #fdba74; }
+.dark .bg-red-50 { background-color: color-mix(in srgb, #ef4444 12%, transparent); }
+.dark .bg-red-100 { background-color: color-mix(in srgb, #ef4444 18%, transparent); }
+.dark .bg-red-200 { background-color: color-mix(in srgb, #ef4444 26%, transparent); }
+.dark .border-red-100, .dark .border-red-200 { border-color: color-mix(in srgb, #ef4444 35%, transparent); }
+.dark .text-red-600, .dark .text-red-700, .dark .text-red-800, .dark .text-red-900 { color: #fca5a5; }
+.dark .bg-blue-50 { background-color: color-mix(in srgb, #3b82f6 12%, transparent); }
+.dark .bg-blue-100 { background-color: color-mix(in srgb, #3b82f6 18%, transparent); }
+.dark .bg-blue-200 { background-color: color-mix(in srgb, #3b82f6 26%, transparent); }
+.dark .border-blue-100, .dark .border-blue-200 { border-color: color-mix(in srgb, #3b82f6 35%, transparent); }
+.dark .text-blue-600, .dark .text-blue-700, .dark .text-blue-800, .dark .text-blue-900 { color: #93c5fd; }
+.dark .bg-sky-50 { background-color: color-mix(in srgb, #0ea5e9 12%, transparent); }
+.dark .bg-sky-100 { background-color: color-mix(in srgb, #0ea5e9 18%, transparent); }
+.dark .bg-sky-200 { background-color: color-mix(in srgb, #0ea5e9 26%, transparent); }
+.dark .border-sky-100, .dark .border-sky-200 { border-color: color-mix(in srgb, #0ea5e9 35%, transparent); }
+.dark .text-sky-600, .dark .text-sky-700, .dark .text-sky-800, .dark .text-sky-900 { color: #7dd3fc; }
+.dark .bg-indigo-50 { background-color: color-mix(in srgb, #6366f1 12%, transparent); }
+.dark .bg-indigo-100 { background-color: color-mix(in srgb, #6366f1 18%, transparent); }
+.dark .bg-indigo-200 { background-color: color-mix(in srgb, #6366f1 26%, transparent); }
+.dark .border-indigo-100, .dark .border-indigo-200 { border-color: color-mix(in srgb, #6366f1 35%, transparent); }
+.dark .text-indigo-600, .dark .text-indigo-700, .dark .text-indigo-800, .dark .text-indigo-900 { color: #a5b4fc; }
+.dark .bg-violet-50 { background-color: color-mix(in srgb, #8b5cf6 12%, transparent); }
+.dark .bg-violet-100 { background-color: color-mix(in srgb, #8b5cf6 18%, transparent); }
+.dark .bg-violet-200 { background-color: color-mix(in srgb, #8b5cf6 26%, transparent); }
+.dark .border-violet-100, .dark .border-violet-200 { border-color: color-mix(in srgb, #8b5cf6 35%, transparent); }
+.dark .text-violet-600, .dark .text-violet-700, .dark .text-violet-800, .dark .text-violet-900 { color: #c4b5fd; }
+.dark .bg-purple-50 { background-color: color-mix(in srgb, #a855f7 12%, transparent); }
+.dark .bg-purple-100 { background-color: color-mix(in srgb, #a855f7 18%, transparent); }
+.dark .bg-purple-200 { background-color: color-mix(in srgb, #a855f7 26%, transparent); }
+.dark .border-purple-100, .dark .border-purple-200 { border-color: color-mix(in srgb, #a855f7 35%, transparent); }
+.dark .text-purple-600, .dark .text-purple-700, .dark .text-purple-800, .dark .text-purple-900 { color: #d8b4fe; }
+.dark .bg-teal-50 { background-color: color-mix(in srgb, #14b8a6 12%, transparent); }
+.dark .bg-teal-100 { background-color: color-mix(in srgb, #14b8a6 18%, transparent); }
+.dark .bg-teal-200 { background-color: color-mix(in srgb, #14b8a6 26%, transparent); }
+.dark .border-teal-100, .dark .border-teal-200 { border-color: color-mix(in srgb, #14b8a6 35%, transparent); }
+.dark .text-teal-600, .dark .text-teal-700, .dark .text-teal-800, .dark .text-teal-900 { color: #5eead4; }
+.dark .bg-cyan-50 { background-color: color-mix(in srgb, #06b6d4 12%, transparent); }
+.dark .bg-cyan-100 { background-color: color-mix(in srgb, #06b6d4 18%, transparent); }
+.dark .bg-cyan-200 { background-color: color-mix(in srgb, #06b6d4 26%, transparent); }
+.dark .border-cyan-100, .dark .border-cyan-200 { border-color: color-mix(in srgb, #06b6d4 35%, transparent); }
+.dark .text-cyan-600, .dark .text-cyan-700, .dark .text-cyan-800, .dark .text-cyan-900 { color: #67e8f9; }
+.dark .bg-pink-50 { background-color: color-mix(in srgb, #ec4899 12%, transparent); }
+.dark .bg-pink-100 { background-color: color-mix(in srgb, #ec4899 18%, transparent); }
+.dark .bg-pink-200 { background-color: color-mix(in srgb, #ec4899 26%, transparent); }
+.dark .border-pink-100, .dark .border-pink-200 { border-color: color-mix(in srgb, #ec4899 35%, transparent); }
+.dark .text-pink-600, .dark .text-pink-700, .dark .text-pink-800, .dark .text-pink-900 { color: #f9a8d4; }
+.dark .bg-rose-50 { background-color: color-mix(in srgb, var(--rose-500) 12%, transparent); }
+.dark .bg-rose-100 { background-color: color-mix(in srgb, var(--rose-500) 18%, transparent); }
+.dark .bg-rose-200 { background-color: color-mix(in srgb, var(--rose-500) 26%, transparent); }
+.dark .border-rose-100, .dark .border-rose-200 { border-color: color-mix(in srgb, var(--rose-500) 35%, transparent); }
+.dark .text-rose-700, .dark .text-rose-800, .dark .text-rose-900 { color: var(--rose-300); }
