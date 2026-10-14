@@ -20,7 +20,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { safeRedirectPath } from "@/lib/utils";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { toast } from "sonner";
-import { SITE_URL } from "@/lib/site-url";
+import { currentOrigin } from "@/lib/site-url";
 
 const supabaseConfigured = isSupabaseConfigured();
 
@@ -98,7 +98,7 @@ export function StudentSignUpClient() {
       email,
       password,
       options: {
-        emailRedirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent(onboardingNext)}`,
+        emailRedirectTo: `${currentOrigin()}/auth/callback?next=${encodeURIComponent(onboardingNext)}`,
         data: {
           role: "student",
           full_name: `${firstName} ${lastName}`.trim(),
@@ -192,7 +192,7 @@ export function StudentSignUpClient() {
     if (redirectTo) params.set("redirectTo", redirectTo);
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${SITE_URL}/auth/callback?${params}`, queryParams: { prompt: "select_account" } },
+      options: { redirectTo: `${currentOrigin()}/auth/callback?${params}`, queryParams: { prompt: "select_account" } },
     });
   }
 

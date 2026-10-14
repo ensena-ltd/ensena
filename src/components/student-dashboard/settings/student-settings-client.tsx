@@ -27,7 +27,7 @@ import { applyTheme, readThemeCookie, writeThemeCookie, type ThemePreference } f
 import { saveStudentIdentity, useStudentIdentity } from "@/components/student-dashboard/student-identity";
 import { dashboardStudent, studentProfileDetail } from "@/lib/student-dashboard-data";
 import { cn } from "@/lib/utils";
-import { SITE_URL } from "@/lib/site-url";
+import { currentOrigin } from "@/lib/site-url";
 
 const tabs = ["Account", "Notifications", "Privacy", "Security", "Payment Methods", "Calendar Sync", "Theme", "Delete Account"] as const;
 type Tab = (typeof tabs)[number];
@@ -299,7 +299,8 @@ export function StudentSettingsClient({
   // --- Calendar sync ---
   const [calendarToken, setCalendarToken] = useState<string | null>(initialSettings?.calendarToken ?? null);
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const feedUrl = calendarToken ? `${SITE_URL}/api/calendar/${calendarToken}.ics` : "";
+  const origin = useSyncExternalStore(noopSubscribe, currentOrigin, () => "");
+  const feedUrl = calendarToken && origin ? `${origin}/api/calendar/${calendarToken}.ics` : "";
   const webcalUrl = feedUrl.replace(/^https?:/, "webcal:");
 
   async function changeCalendarSync(on: boolean, regenerate = false) {

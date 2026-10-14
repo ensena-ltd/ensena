@@ -32,7 +32,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { safeRedirectPath } from "@/lib/utils";
 import { useErrorToast } from "@/hooks/use-error-toast";
-import { SITE_URL } from "@/lib/site-url";
+import { currentOrigin } from "@/lib/site-url";
 
 function GoogleIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -160,7 +160,7 @@ export function SignInClient() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${SITE_URL}/auth/callback?${params}`,
+        redirectTo: `${currentOrigin()}/auth/callback?${params}`,
         queryParams: { prompt: "select_account" },
       },
     });

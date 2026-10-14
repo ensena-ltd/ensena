@@ -26,7 +26,7 @@ import { createDefaultTutorSignupForm, type TutorSignupForm } from "@/lib/tutor-
 import { isAtLeastAge, TUTOR_AGE_MESSAGE, TUTOR_MIN_AGE } from "@/lib/age";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { toast } from "sonner";
-import { SITE_URL } from "@/lib/site-url";
+import { currentOrigin } from "@/lib/site-url";
 
 const supabaseConfigured = isSupabaseConfigured();
 
@@ -345,7 +345,7 @@ export function SignUpClient() {
       email: form.email.trim(),
       password: form.password,
       options: {
-        emailRedirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent("/tutor-dashboard")}`,
+        emailRedirectTo: `${currentOrigin()}/auth/callback?next=${encodeURIComponent("/tutor-dashboard")}`,
         data: {
           role: "tutor",
           full_name: fullName,
@@ -396,7 +396,7 @@ export function SignUpClient() {
     // here (?google=1) to finish Steps 2-4.
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${SITE_URL}/auth/callback?intent=tutor-signup`, queryParams: { prompt: "select_account" } },
+      options: { redirectTo: `${currentOrigin()}/auth/callback?intent=tutor-signup`, queryParams: { prompt: "select_account" } },
     });
   }
 

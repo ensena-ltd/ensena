@@ -18,7 +18,7 @@ import { applyTheme, readThemeCookie, writeThemeCookie, type ThemePreference } f
 import type { TutorSettingsSnapshot } from "@/lib/tutor-settings-server";
 import { languageSubjectOptions } from "@/lib/tutors";
 import { cn } from "@/lib/utils";
-import { SITE_URL } from "@/lib/site-url";
+import { currentOrigin } from "@/lib/site-url";
 
 const tabs = ["Account", "Notifications", "Privacy", "Payments", "Security", "Calendar", "Language", "Theme", "Delete Account"] as const;
 type Tab = (typeof tabs)[number];
@@ -350,7 +350,8 @@ export function SettingsClient({ initial = null }: { initial?: TutorSettingsSnap
   // ── Calendar ──
   const [calendarToken, setCalendarToken] = useState<string | null>(initial?.calendarToken ?? null);
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const feedUrl = calendarToken ? `${SITE_URL}/api/calendar/${calendarToken}.ics` : "";
+  const origin = useSyncExternalStore(noopSubscribe, currentOrigin, () => "");
+  const feedUrl = calendarToken && origin ? `${origin}/api/calendar/${calendarToken}.ics` : "";
   const webcalUrl = feedUrl.replace(/^https?:/, "webcal:");
   const [defaultDuration, setDefaultDuration] = useState(initial?.defaultLessonDuration ?? 60);
 

@@ -96,6 +96,16 @@ function planCookieCleanup(request: NextRequest): CookieCleanup {
 }
 
 export async function proxy(request: NextRequest) {
+  // Supabase falls back to the project's Site URL (the bare homepage) when a
+  // redirectTo isn't on its allow-list, leaving the OAuth/email ?code= on "/".
+  // Hand it to the callback on this same host — the PKCE verifier cookie
+  // only exists here — so the sign-in still completes.
+  if (request.nextUrl.pathname === "/" && request.nextUrl.searchParams.has("code")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/auth/callback";
+    return NextResponse.redirect(url);
+  }
+
   const cleanup = planCookieCleanup(request);
   if (cleanup && "redirect" in cleanup) return cleanup.redirect;
   const finish = (response: NextResponse) => (cleanup ? cleanup.apply(response) : response);

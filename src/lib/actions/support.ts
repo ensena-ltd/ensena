@@ -20,7 +20,7 @@ import {
   type StoredAttachment,
 } from "@/lib/support-data";
 import { loadBennyChat, SUPPORT_BUCKET, type BennyChat } from "@/lib/support-server";
-import { SITE_URL } from "@/lib/site-url";
+import { requestOrigin } from "@/lib/site-url-server";
 
 // Every support write goes through here, using the service-role client only
 // after working out who the caller is: a requester can open tickets and
@@ -90,7 +90,7 @@ async function logActivity(requestId: string, actorName: string, action: string)
 // Lets the support inbox know a new ticket arrived, when email is set up.
 async function alertSupportInbox(code: string, subject: string, from: string, role: SupportUserRole, message: string) {
   if (!isResendConfigured()) return;
-  const site = SITE_URL;
+  const site = await requestOrigin();
   const link = `${site}/admin/support/${code}`;
   const sent = await sendEmail({
     to: process.env.SUPPORT_INBOX_EMAIL || SUPPORT_EMAIL,

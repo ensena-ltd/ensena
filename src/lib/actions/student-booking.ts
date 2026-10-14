@@ -22,7 +22,7 @@ import { getPlatformTodayParts } from "@/lib/platform-time";
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { loadBusyIntervals, loadTutorProfile, loadTutorWeekly } from "@/lib/tutor-directory-server";
-import { SITE_URL } from "@/lib/site-url";
+import { requestOrigin } from "@/lib/site-url-server";
 
 // Booking, paying for and rescheduling a real tutor's private lessons.
 // Every write re-checks the tutor's availability on the server — the slot
@@ -205,7 +205,7 @@ export async function startBookingCheckout(bookingGroupId: string): Promise<Book
   await admin.from("private_lessons").update({ updated_at: new Date().toISOString() }).eq("booking_group_id", bookingGroupId).eq("payment_status", "unpaid");
 
   const total = lessons.reduce((sum, l) => sum + Number(l.price), 0);
-  const origin = SITE_URL;
+  const origin = await requestOrigin();
   try {
     const { authorizationUrl } = await initializeTransaction({
       email: student.email,

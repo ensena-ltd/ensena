@@ -10,7 +10,7 @@ import { dashboardHrefByRole, type AppRole } from "@/lib/supabase/require-role";
 import { guardianConsentEmail, isResendConfigured, passwordResetEmail, sendEmail } from "@/lib/resend";
 import { notifyUser } from "@/lib/notifications";
 import { safeRedirectPath } from "@/lib/utils";
-import { SITE_URL } from "@/lib/site-url";
+import { requestOrigin } from "@/lib/site-url-server";
 
 export interface SignInState {
   status: "idle" | "error";
@@ -190,7 +190,7 @@ export async function requestGuardianConsent(input: { studentId?: string; guardi
     return { status: "error", message: "We couldn't create the consent request. Please try again." };
   }
 
-  const acceptUrl = `${SITE_URL}/auth/callback?${new URLSearchParams({
+  const acceptUrl = `${await requestOrigin()}/auth/callback?${new URLSearchParams({
     token_hash: link.properties.hashed_token,
     type: "invite",
     next: "/accept-guardian-invitation",
@@ -248,7 +248,7 @@ export async function resendGuardianConsent(): Promise<GuardianConsentState> {
     return { status: "error", message: "We couldn't create a new consent link. Please try again." };
   }
 
-  const acceptUrl = `${SITE_URL}/auth/callback?${new URLSearchParams({
+  const acceptUrl = `${await requestOrigin()}/auth/callback?${new URLSearchParams({
     token_hash: link.properties.hashed_token,
     type: "email",
     next: "/accept-guardian-invitation",
@@ -346,7 +346,7 @@ export async function requestPasswordReset(rawEmail: string): Promise<PasswordRe
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: "error", message: "Please enter a valid email address." };
   if (!isResendConfigured()) return { status: "error", message: "Password reset emails aren't available right now. Please contact support@ensena.co." };
 
-  const origin = SITE_URL;
+  const origin = await requestOrigin();
   after(async () => {
     try {
       const outcome = await sendPasswordResetEmail(email, origin);
