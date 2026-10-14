@@ -81,7 +81,7 @@ export function AdminPlatformUsersTab() {
     }
 
     setSending(true);
-    const result = await inviteStaffMember({ origin: window.location.origin, name: name.trim(), email: email.trim(), role, customSections: Array.from(sections) });
+    const result = await inviteStaffMember({ name: name.trim(), email: email.trim(), role, customSections: Array.from(sections) });
     setSending(false);
     if (result.status === "error") {
       flash(result.message ?? "Something went wrong sending the invitation.");

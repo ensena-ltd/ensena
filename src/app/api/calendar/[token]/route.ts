@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
+import { SITE_URL } from "@/lib/site-url";
 
 // Private iCalendar (.ics) feed of a user's Ensena schedule — private
 // lessons, discovery sessions, group-class sessions, counselling
@@ -19,10 +20,6 @@ interface CalEvent {
   location?: string;
   status?: "CONFIRMED" | "TENTATIVE" | "CANCELLED";
   allDay?: boolean;
-}
-
-function siteUrl(request: NextRequest) {
-  return (process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin).replace(/\/$/, "");
 }
 
 function icsDate(d: Date) {
@@ -99,7 +96,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const role = me?.role === "tutor" ? "tutor" : "student";
   const mine = role === "tutor" ? "tutor_id" : "student_id";
   const other = role === "tutor" ? "student_id" : "tutor_id";
-  const base = siteUrl(request);
+  const base = SITE_URL;
   const since = new Date(Date.now() - 60 * 86400_000).toISOString();
 
   const [lessons, discovery, counselling, homework, enrollments] = await Promise.all([

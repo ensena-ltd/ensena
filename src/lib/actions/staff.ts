@@ -3,6 +3,7 @@
 import { getSupabaseServerClient as getSupabaseServiceRoleClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminRole } from "@/lib/admin-permissions-data";
+import { SITE_URL } from "@/lib/site-url";
 
 export interface StaffActionState {
   status: "idle" | "error";
@@ -29,7 +30,6 @@ async function requireCallerIsAdmin() {
 }
 
 export interface InviteStaffMemberInput {
-  origin: string;
   name: string;
   email: string;
   role: AdminRole;
@@ -58,7 +58,7 @@ export async function inviteStaffMember(input: InviteStaffMemberInput): Promise<
   const serviceRole = getSupabaseServiceRoleClient();
   const { data: invited, error: inviteError } = await serviceRole.auth.admin.inviteUserByEmail(email, {
     data: { role: profileRole, full_name: input.name, staff_role_id: roleRow.id },
-    redirectTo: `${input.origin}/auth/callback?next=${encodeURIComponent("/accept-invitation")}`,
+    redirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent("/accept-invitation")}`,
   });
 
   if (inviteError || !invited.user) {

@@ -6,6 +6,7 @@ import { getSupabaseServerClient as getSupabaseServiceRoleClient } from "@/lib/s
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { dashboardHrefByRole, type AppRole } from "@/lib/supabase/require-role";
 import { safeRedirectPath } from "@/lib/utils";
+import { SITE_URL } from "@/lib/site-url";
 
 // Google's OAuth round-trip creates an auth.users row for ANY Google account
 // it sees, whether or not that person ever signed up for Ensena. A "sign-in"
@@ -31,7 +32,8 @@ function isBrandNewAccount(user: User) {
 //                       tutor wizard's Steps 2-4 (/sign-up/tutor?google=1)
 //   - none              (older links) — role chooser
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const origin = SITE_URL;
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const otpType = searchParams.get("type") as EmailOtpType | null;

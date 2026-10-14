@@ -39,7 +39,7 @@ export interface SafetyAnalysis {
 // Enseña's own domains — links to these are never flagged. Everything else
 // is treated as an external link per "external links are not allowed in
 // student-teacher communication."
-const ALLOWED_DOMAINS = ["ensena.co", "ensena.app", "localhost"];
+const ALLOWED_DOMAINS = ["ensena.co", "ensena.app"];
 
 // "signal" and "line" are deliberately NOT in this list — they're also
 // ordinary English words ("the big signal", "wait in line"), and a bare

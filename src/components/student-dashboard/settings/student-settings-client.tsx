@@ -27,6 +27,7 @@ import { applyTheme, readThemeCookie, writeThemeCookie, type ThemePreference } f
 import { saveStudentIdentity, useStudentIdentity } from "@/components/student-dashboard/student-identity";
 import { dashboardStudent, studentProfileDetail } from "@/lib/student-dashboard-data";
 import { cn } from "@/lib/utils";
+import { SITE_URL } from "@/lib/site-url";
 
 const tabs = ["Account", "Notifications", "Privacy", "Security", "Payment Methods", "Calendar Sync", "Theme", "Delete Account"] as const;
 type Tab = (typeof tabs)[number];
@@ -298,10 +299,8 @@ export function StudentSettingsClient({
   // --- Calendar sync ---
   const [calendarToken, setCalendarToken] = useState<string | null>(initialSettings?.calendarToken ?? null);
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const origin = useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
-  const feedUrl = calendarToken && origin ? `${origin}/api/calendar/${calendarToken}.ics` : "";
+  const feedUrl = calendarToken ? `${SITE_URL}/api/calendar/${calendarToken}.ics` : "";
   const webcalUrl = feedUrl.replace(/^https?:/, "webcal:");
-  const isLocalhost = /\/\/(localhost|127\.0\.0\.1)(:|\/)/.test(feedUrl);
 
   async function changeCalendarSync(on: boolean, regenerate = false) {
     if (!me.id) {
@@ -563,7 +562,6 @@ export function StudentSettingsClient({
                 </label>
                 <p className="text-xs text-ensena-muted">
                   Google Calendar refreshes subscribed calendars every few hours; Apple Calendar and Outlook let you choose how often.
-                  {isLocalhost && " Note: calendar apps can't reach localhost — this works once Ensena is deployed."}
                 </p>
                 <button
                   type="button"

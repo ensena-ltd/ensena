@@ -1,7 +1,6 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
 import {
@@ -23,6 +22,7 @@ import { getPlatformTodayParts } from "@/lib/platform-time";
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { loadBusyIntervals, loadTutorProfile, loadTutorWeekly } from "@/lib/tutor-directory-server";
+import { SITE_URL } from "@/lib/site-url";
 
 // Booking, paying for and rescheduling a real tutor's private lessons.
 // Every write re-checks the tutor's availability on the server — the slot
@@ -50,13 +50,6 @@ async function currentStudent(): Promise<{ id: string; name: string; email: stri
 function dateISOFor(ms: number): string {
   const { year, month, day } = getPlatformTodayParts(ms);
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-async function siteOrigin(): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-  return `${proto}://${host}`;
 }
 
 // ── Slots ──────────────────────────────────────────────────────────────
@@ -212,7 +205,7 @@ export async function startBookingCheckout(bookingGroupId: string): Promise<Book
   await admin.from("private_lessons").update({ updated_at: new Date().toISOString() }).eq("booking_group_id", bookingGroupId).eq("payment_status", "unpaid");
 
   const total = lessons.reduce((sum, l) => sum + Number(l.price), 0);
-  const origin = await siteOrigin();
+  const origin = SITE_URL;
   try {
     const { authorizationUrl } = await initializeTransaction({
       email: student.email,

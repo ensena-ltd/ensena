@@ -15,6 +15,7 @@ import { BirthdayCard } from "@/components/shared/birthday/birthday-card";
 import { generateBirthdayCardImage } from "@/lib/birthday-image-generator";
 import { defaultShareCaption, type BirthdayCardData } from "@/lib/birthday-data";
 import { cn } from "@/lib/utils";
+import { SITE_URL } from "@/lib/site-url";
 
 // lucide-react ships no brand/social-network glyphs, so these platform
 // icons are small inline SVGs (same convention for all four below).
@@ -70,7 +71,7 @@ export function BirthdayShareModal({
 
   if (!open) return null;
 
-  const siteUrl = typeof window !== "undefined" ? window.location.origin : "https://ensena.co";
+  const siteUrl = SITE_URL;
 
   async function withGeneratedImage(action: string, run: (blob: Blob) => Promise<void> | void) {
     setBusy(action);

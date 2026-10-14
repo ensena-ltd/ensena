@@ -11,6 +11,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { getPendingVerificationEmail } from "@/lib/pending-verification";
 import { safeRedirectPath } from "@/lib/utils";
+import { SITE_URL } from "@/lib/site-url";
 
 const supabaseConfigured = isSupabaseConfigured();
 
@@ -34,7 +35,7 @@ export function VerifyEmailClient() {
       await getSupabaseBrowserClient().auth.resend({
         type: "signup",
         email,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+        options: { emailRedirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent(next)}` },
       });
       setResending(false);
     }

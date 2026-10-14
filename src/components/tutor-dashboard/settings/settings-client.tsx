@@ -18,6 +18,7 @@ import { applyTheme, readThemeCookie, writeThemeCookie, type ThemePreference } f
 import type { TutorSettingsSnapshot } from "@/lib/tutor-settings-server";
 import { languageSubjectOptions } from "@/lib/tutors";
 import { cn } from "@/lib/utils";
+import { SITE_URL } from "@/lib/site-url";
 
 const tabs = ["Account", "Notifications", "Privacy", "Payments", "Security", "Calendar", "Language", "Theme", "Delete Account"] as const;
 type Tab = (typeof tabs)[number];
@@ -349,10 +350,8 @@ export function SettingsClient({ initial = null }: { initial?: TutorSettingsSnap
   // ── Calendar ──
   const [calendarToken, setCalendarToken] = useState<string | null>(initial?.calendarToken ?? null);
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const origin = useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
-  const feedUrl = calendarToken && origin ? `${origin}/api/calendar/${calendarToken}.ics` : "";
+  const feedUrl = calendarToken ? `${SITE_URL}/api/calendar/${calendarToken}.ics` : "";
   const webcalUrl = feedUrl.replace(/^https?:/, "webcal:");
-  const isLocalhost = /\/\/(localhost|127\.0\.0\.1)(:|\/)/.test(feedUrl);
   const [defaultDuration, setDefaultDuration] = useState(initial?.defaultLessonDuration ?? 60);
 
   async function changeCalendarSync(on: boolean, regenerate = false) {
@@ -645,7 +644,6 @@ export function SettingsClient({ initial = null }: { initial?: TutorSettingsSnap
                   </label>
                   <p className="text-xs text-ensena-muted">
                     Google Calendar refreshes subscribed calendars every few hours; Apple Calendar and Outlook let you choose how often.
-                    {isLocalhost && " Note: calendar apps can't reach localhost — this works once Ensena is deployed."}
                   </p>
                   <button type="button" disabled={savingCalendar} onClick={() => void changeCalendarSync(true, true)} className="self-start text-xs font-semibold text-ensena-primary hover:underline disabled:opacity-60">
                     Reset link (if you shared it by mistake)
