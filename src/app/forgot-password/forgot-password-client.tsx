@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, KeyRound, Mail, MailCheck, ShieldCheck } from "lucide-react";
@@ -23,24 +23,31 @@ const bullets = [
 
 // Remembered from the sign-in form so the address is already filled in here.
 const LAST_EMAIL_KEY = "ensena_last_email";
+// Set by the sign-in form's "Forgot password?" link with whatever was typed.
+const HANDOFF_EMAIL_KEY = "ensena_forgot_email";
 
 const noopSubscribe = () => () => {};
-function readLastEmail(): string {
+function readPrefillEmail(): string {
   try {
-    return window.localStorage.getItem(LAST_EMAIL_KEY) ?? "";
+    return window.sessionStorage.getItem(HANDOFF_EMAIL_KEY) || window.localStorage.getItem(LAST_EMAIL_KEY) || "";
   } catch {
     return "";
   }
 }
 
 export function ForgotPasswordClient() {
-  // Pre-filled from ?email= (the sign-in form passes what was typed there),
-  // else the last email used on this device — read through
-  // useSyncExternalStore so server and browser render the same first.
-  const fromLink = useSearchParams().get("email") ?? "";
-  const remembered = useSyncExternalStore(noopSubscribe, readLastEmail, () => "");
+  // Pre-filled from what was typed on sign-in, else the last email used on
+  // this device — never from the URL, so the address isn't exposed there.
+  // Read through useSyncExternalStore so server and browser render the same first.
+  const remembered = useSyncExternalStore(noopSubscribe, readPrefillEmail, () => "");
   const [typed, setEmail] = useState<string | null>(null);
-  const email = typed ?? (fromLink || remembered);
+  const email = typed ?? remembered;
+
+  // Old links may still carry ?email= — drop it from the address bar.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.has("email")) window.history.replaceState(null, "", window.location.pathname);
+  }, [searchParams]);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useErrorToast(error);

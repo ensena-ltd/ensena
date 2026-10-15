@@ -312,7 +312,22 @@ export function SignInClient() {
                 <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="size-4 rounded border-ensena-border accent-ensena-primary" />
                 Remember me
               </label>
-              <Link href={email.trim() ? `/forgot-password?email=${encodeURIComponent(email.trim())}` : "/forgot-password"} className="text-sm font-medium text-ensena-primary hover:underline">Forgot password?</Link>
+              <Link
+                href="/forgot-password"
+                onClick={() => {
+                  // Hand the typed address over in sessionStorage, not the URL,
+                  // so it never shows in the address bar, history or logs.
+                  try {
+                    if (email.trim()) window.sessionStorage.setItem("ensena_forgot_email", email.trim());
+                    else window.sessionStorage.removeItem("ensena_forgot_email");
+                  } catch {
+                    // Not passed along — the page falls back to the remembered email.
+                  }
+                }}
+                className="text-sm font-medium text-ensena-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
             </div>
 
             <Button type="submit" loading={submitting} className="mt-1 h-12 w-full rounded-full bg-ensena-primary text-sm font-semibold text-white hover:bg-[var(--ensena-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60">

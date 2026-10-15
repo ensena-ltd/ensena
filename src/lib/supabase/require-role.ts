@@ -27,6 +27,24 @@ export interface AuthedProfile {
 // server-side check, done close to the page it protects rather than only in
 // proxy.ts: no session -> sign-in; wrong role -> their own real dashboard,
 // never a silently-rendered page meant for someone else.
+// The signed-in user's own suspension currently in force, if any (RLS lets
+// people read their own restrictions).
+export async function activeSuspension(userId: string): Promise<{ reason: string; endAt: string | null } | null> {
+  const supabase = await getSupabaseServerClient();
+  const { data } = await supabase
+    .from("account_restrictions")
+    .select("reason, end_at")
+    .eq("actor_id", userId)
+    .eq("type", "Suspension")
+    .in("status", ["active", "under_review"])
+    .lte("start_at", new Date().toISOString())
+    .or(`end_at.is.null,end_at.gt.${new Date().toISOString()}`)
+    .order("start_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? { reason: data.reason, endAt: data.end_at } : null;
+}
+
 export async function requireRole(role: AppRole): Promise<AuthedProfile | null> {
   if (!isSupabaseConfigured()) return null;
 
@@ -60,6 +78,13 @@ export async function requireRole(role: AppRole): Promise<AuthedProfile | null> 
   const profileRole = profile.role as AppRole;
   if (profileRole !== role) {
     redirect(dashboardHrefByRole[profileRole] ?? "/sign-in");
+  }
+
+  // An account suspended from Admin → Users can't use any dashboard until
+  // the suspension ends or is lifted (warnings and messaging restrictions
+  // are enforced where they apply, e.g. sending messages).
+  if (profileRole !== "admin" && (await activeSuspension(profile.id))) {
+    redirect("/account-suspended");
   }
 
   // "Last active" (shown on a tutor's public profile when they allow it),
