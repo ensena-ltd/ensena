@@ -21,13 +21,16 @@ export interface ClassListItem {
   kind: ClassKind;
   title: string;
   tutor: string;
-  tutorImage: string;
+  /** null falls back to the tutor's initial. */
+  tutorImage: string | null;
   /** Real "Class Details" route for this row — clicking the title/subject/tutor block navigates here, distinct from the row's own action button (Enter Classroom/View Class/etc.) and its kebab menu. Omit only when there's genuinely nowhere else to send it. */
   detailsHref?: string;
   dateLabel: string;
   timeLabel: string;
   sortTime: number;
   startsInLabel?: string;
+  /** Defaults to "Online". */
+  modeLabel?: string;
   extraLine?: string;
   bookingIdLabel: "Booking ID" | "Class ID";
   bookingId: string;
@@ -68,8 +71,8 @@ function CopyId({ value }: { value: string }) {
 export function ClassListRow({ item }: { item: ClassListItem }) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-ensena-border bg-ensena-surface p-4 sm:flex-row sm:items-center">
-      <div className="relative size-14 shrink-0 overflow-hidden rounded-full">
-        <Image src={item.tutorImage} alt={item.tutor} fill sizes="56px" className="object-cover" />
+      <div className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ensena-primary/10 text-lg font-semibold text-ensena-primary">
+        {item.tutorImage ? <Image src={item.tutorImage} alt={item.tutor} fill sizes="56px" className="object-cover" /> : (item.tutor.trim()[0] ?? "?").toUpperCase()}
       </div>
 
       <div className="min-w-[170px] flex-1">
@@ -102,7 +105,7 @@ export function ClassListRow({ item }: { item: ClassListItem }) {
         {item.startsInLabel && <span className="text-xs font-semibold text-ensena-primary">{item.startsInLabel}</span>}
         {!item.startsInLabel && item.kind !== "Group Class" && (
           <span className="flex items-center gap-1.5 text-xs text-ensena-muted">
-            <Video className="size-3.5" /> Online
+            <Video className="size-3.5" /> {item.modeLabel ?? "Online"}
           </span>
         )}
       </div>

@@ -46,10 +46,20 @@ const tabs = ["Upcoming", "Active", "Completed", "Cancelled", "Study Planner"] a
 type Tab = (typeof tabs)[number];
 const sectionId = (tab: Tab) => `myclasses-${tab.toLowerCase().replace(" ", "-")}`;
 
-const UPCOMING_PREVIEW = 6;
+const UPCOMING_PREVIEW = 3;
+const COMPLETED_PREVIEW = 3;
+const ACTIVE_PREVIEW = 3;
 
 function EmptyState({ children }: { children: ReactNode }) {
   return <div className="rounded-2xl border border-dashed border-ensena-border p-8 text-center text-sm text-ensena-muted">{children}</div>;
+}
+
+function ViewAllLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} className="flex items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
+      {label} <ChevronRight className="size-3.5" />
+    </Link>
+  );
 }
 
 function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
@@ -80,7 +90,6 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<CompletedLesson | null>(null);
-  const [showAllUpcoming, setShowAllUpcoming] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
@@ -231,9 +240,15 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
     });
   }
 
+  // Completed preview: newest first, lessons waiting on you first.
+  const completedTotal = data.completed.length + awaiting.length;
+  const completedPreview = [...data.completed]
+    .sort((a, b) => Number(b.confirmationStatus === "Pending") - Number(a.confirmationStatus === "Pending") || b.completedAtMs - a.completedAtMs)
+    .slice(0, COMPLETED_PREVIEW);
+  const completedPreviewAwaiting = awaiting.slice(0, Math.max(0, COMPLETED_PREVIEW - completedPreview.length));
+
   const weekEnd = addDaysISO(todayISO, 6);
   const overdue = tasks.filter((t) => !t.done && t.dueDate !== null && t.dueDate < todayISO);
-  const later = tasks.filter((t) => t.dueDate === null || t.dueDate > weekEnd);
   const thisWeek = tasksDueBetween(tasks, todayISO, weekEnd);
 
   return (
@@ -260,16 +275,7 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
         <div className="min-w-0 flex-1">
           {/* Upcoming */}
           <section id={sectionId("Upcoming")} className="scroll-mt-6">
-            <SectionHeader
-              title="Upcoming"
-              action={
-                upcoming.length > UPCOMING_PREVIEW && (
-                  <button type="button" onClick={() => setShowAllUpcoming((v) => !v)} className="flex items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
-                    {showAllUpcoming ? "Show less" : `View all ${upcoming.length}`} <ChevronRight className="size-3.5" />
-                  </button>
-                )
-              }
-            />
+            <SectionHeader title="Upcoming" action={<ViewAllLink href="/student-dashboard/lessons/upcoming" label="View all upcoming" />} />
             {upcoming.length === 0 ? (
               <div className="mt-4">
                 <EmptyState>
@@ -280,7 +286,7 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
               </div>
             ) : (
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {(showAllUpcoming ? upcoming : upcoming.slice(0, UPCOMING_PREVIEW)).map((s) => {
+                {upcoming.slice(0, UPCOMING_PREVIEW).map((s) => {
                   const hint = entryHint(s);
                   const enter = canEnter(s);
                   return (
@@ -334,12 +340,12 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
 
           {/* Active */}
           <section id={sectionId("Active")} className="mt-8 scroll-mt-6">
-            <SectionHeader title="Active Classes" />
+            <SectionHeader title="Active Classes" action={<ViewAllLink href="/student-dashboard/lessons/active" label="View all active" />} />
             <div className="mt-4 flex flex-col gap-3">
               {active.length === 0 ? (
                 <EmptyState>No active classes right now.</EmptyState>
               ) : (
-                active.map((a) => (
+                active.slice(0, ACTIVE_PREVIEW).map((a) => (
                   <div key={a.key} className="flex flex-wrap items-center gap-4 rounded-2xl border border-ensena-border bg-ensena-surface p-4">
                     <PersonAvatar name={a.personName} image={a.personImage} className="size-12" />
                     <div className="min-w-[180px] flex-1">
@@ -371,14 +377,14 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
 
           {/* Completed */}
           <section id={sectionId("Completed")} className="mt-8 scroll-mt-6">
-            <SectionHeader title="Completed" />
+            <SectionHeader title="Completed" action={<ViewAllLink href="/student-dashboard/lessons/completed" label="View all completed" />} />
             {data.completed.length === 0 && awaiting.length === 0 ? (
               <div className="mt-4">
                 <EmptyState>No completed classes yet.</EmptyState>
               </div>
             ) : (
               <div className="mt-4 flex flex-col divide-y divide-ensena-border rounded-2xl border border-ensena-border bg-ensena-surface">
-                {awaiting.map((s) => (
+                {completedPreviewAwaiting.map((s) => (
                   <div key={s.id} className="flex flex-wrap items-center gap-4 p-4">
                     <PersonAvatar name={s.personName} image={s.personImage} className="size-11" />
                     <div className="min-w-[160px] flex-1">
@@ -392,7 +398,7 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
                     </Button>
                   </div>
                 ))}
-                {data.completed.map((c) => {
+                {completedPreview.map((c) => {
                   const badge = completionBadge(c, nowMs);
                   return (
                     <div key={c.id} className="flex flex-wrap items-center gap-4 p-4">
@@ -428,9 +434,9 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
                 })}
               </div>
             )}
-            {data.completed.length > 0 && (
+            {completedTotal > 0 && (
               <p className="mt-3 text-center text-sm text-ensena-muted">
-                {data.completed.length} completed {data.completed.length === 1 ? "class" : "classes"}
+                Showing {completedPreview.length + completedPreviewAwaiting.length} of {completedTotal} completed {completedTotal === 1 ? "class" : "classes"}
               </p>
             )}
           </section>
@@ -475,9 +481,6 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
                 </Link>
               }
             />
-            <div className="mt-4">
-              <AddTaskForm onAdd={add} defaultDue={todayISO} showDate />
-            </div>
             {overdue.length > 0 && (
               <div className="mt-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Overdue</p>
@@ -500,14 +503,9 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
                 </div>
               </div>
             </div>
-            {later.length > 0 && (
-              <div className="mt-5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ensena-muted">Later</p>
-                <div className="mt-2">
-                  <TaskCheckboxList tasks={later} onToggle={toggle} onRemove={remove} empty="" />
-                </div>
-              </div>
-            )}
+            <div className="mt-5 border-t border-ensena-border pt-4">
+              <AddTaskForm onAdd={add} defaultDue={todayISO} showDate />
+            </div>
           </section>
         </div>
 
@@ -548,6 +546,23 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
                 ))}
               </ul>
             )}
+            <button type="button" onClick={() => scrollToTab("Upcoming")} className="mt-3 flex items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
+              View full schedule <ChevronRight className="size-3.5" />
+            </button>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ensena-muted">Today</p>
+            <div className="mt-2">
+              <TaskCheckboxList tasks={tasksDueOn(tasks, todayISO)} onToggle={toggle} empty="Nothing planned for today." />
+            </div>
+            <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-ensena-muted">This Week</p>
+            <div className="mt-2">
+              <TaskCheckboxList tasks={thisWeek} onToggle={toggle} empty="Nothing else this week." />
+            </div>
+            <Link href="/student-dashboard/study-planner" className="mt-4 flex items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
+              View full planner <ChevronRight className="size-3.5" />
+            </Link>
           </div>
         </div>
       </div>

@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { UpcomingClassesClient } from "@/components/student-dashboard/lessons/upcoming-classes-client";
+import { UpcomingClassesReal } from "@/components/student-dashboard/live/class-lists-real";
+import { loadStudentLearning } from "@/lib/student-learning-server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { requireRole } from "@/lib/supabase/require-role";
 
 export const metadata: Metadata = {
   title: "Upcoming Classes | Ensena Student Dashboard",
 };
 
-// With a real account, My Classes lists every Upcoming class itself.
-export default function UpcomingClassesPage() {
-  if (isSupabaseConfigured()) redirect("/student-dashboard/lessons?tab=Upcoming");
-  return <UpcomingClassesClient />;
+export default async function Page() {
+  const profile = isSupabaseConfigured() ? await requireRole("student") : null;
+  if (!profile) return <UpcomingClassesClient />;
+  return <UpcomingClassesReal data={await loadStudentLearning(profile.id)} />;
 }

@@ -60,6 +60,8 @@ export interface CompletedLesson {
   /** Whether the student can leave a review now (lesson confirmed / cleared, not disputed). */
   reviewable: boolean;
   review: { rating: number; comment: string } | null;
+  /** Group sessions only: whether the student attended (group_attendance), null when not recorded. */
+  attended: boolean | null;
 }
 
 export interface StudyTaskRow {
@@ -120,6 +122,10 @@ export interface StudentLearningSnapshot {
   groupClassSuggestions: GroupClassSuggestion[];
   notifications: LiveNotification[];
   unreadNotifications: number;
+  /** Sum of unread messages across the student's conversations. */
+  unreadMessages: number;
+  /** Numeric homework grades (0–100) the student's tutors have recorded. */
+  homeworkScores: number[];
   hasCounselling: boolean;
 }
 
@@ -136,6 +142,8 @@ const emptySnapshot = (): StudentLearningSnapshot => ({
   groupClassSuggestions: [],
   notifications: [],
   unreadNotifications: 0,
+  unreadMessages: 0,
+  homeworkScores: [],
   hasCounselling: false,
 });
 
@@ -143,6 +151,16 @@ const ms = (v: unknown): number => (typeof v === "string" ? new Date(v).getTime(
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v) || 0);
 const strOrNull = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+// Homework grades are free text ("85", "85%", "17/20"). Only numeric ones
+// count towards an average score; letter grades are left out rather than guessed.
+function parseGrade(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const fraction = raw.match(/^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/);
+  if (fraction) return Number(fraction[2]) > 0 ? Math.min(100, (Number(fraction[1]) / Number(fraction[2])) * 100) : null;
+  const pct = raw.match(/^\s*(\d+(?:\.\d+)?)\s*%?\s*$/);
+  return pct && Number(pct[1]) <= 100 ? Number(pct[1]) : null;
+}
 
 function sessionStatus(raw: unknown): LearningStatus {
   switch (raw) {
@@ -212,6 +230,8 @@ async function load(studentId: string): Promise<StudentLearningSnapshot> {
     { data: savedRows },
     { data: notificationRows },
     { count: unreadCount },
+    { data: conversationRows },
+    { data: homeworkRows },
   ] = await Promise.all([
     admin.from("student_profiles").select("academic_level, academic_detail, subjects, course").eq("id", studentId).maybeSingle(),
     admin.from("private_lessons").select("*").eq("student_id", studentId).order("scheduled_at"),
@@ -224,6 +244,8 @@ async function load(studentId: string): Promise<StudentLearningSnapshot> {
     admin.from("saved_tutors").select("tutor_id").eq("student_id", studentId),
     admin.from("notifications").select("id, text, category, action_url, unread, created_at").eq("user_id", studentId).eq("dismissed", false).order("created_at", { ascending: false }).limit(5),
     admin.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", studentId).eq("dismissed", false).eq("unread", true),
+    admin.from("conversation_participants").select("unread_count").eq("user_id", studentId).eq("archived", false),
+    admin.from("homework_items").select("grade").eq("student_id", studentId).not("grade", "is", null),
   ]);
 
   const privates = (privateRows ?? []) as Row[];
@@ -231,6 +253,11 @@ async function load(studentId: string): Promise<StudentLearningSnapshot> {
   const counselling = (counsellingRows ?? []) as Row[];
   const enrollments = (enrollmentRows ?? []) as Row[];
   const confirmations = (confirmationRows ?? []) as Row[];
+  const groupConfirmationIds = confirmations.filter((c) => c.type === "Group").map((c) => c.id as string);
+  const { data: attendanceRows } = groupConfirmationIds.length
+    ? await admin.from("group_attendance").select("lesson_confirmation_id, attended").eq("student_id", studentId).in("lesson_confirmation_id", groupConfirmationIds)
+    : { data: [] };
+  const attendance = new Map(((attendanceRows ?? []) as Row[]).map((a) => [a.lesson_confirmation_id as string, a.attended === true]));
 
   // Group classes: enrollment -> cohort -> class + that cohort's sessions.
   const cohortIds = [...new Set(enrollments.map((e) => e.cohort_id as string))];
@@ -456,6 +483,7 @@ async function load(studentId: string): Promise<StudentLearningSnapshot> {
       // away; a private lesson once the student confirmed it (or it auto-released).
       reviewable: confirmationStatus !== "Disputed" && (type === "group" || confirmationStatus === "Confirmed" || c.escrow_status === "Released"),
       review: reviews.get(c.id as string) ?? null,
+      attended: type === "group" ? (attendance.get(c.id as string) ?? null) : null,
     });
   }
   // Lessons a tutor marked Completed without an escrow record.
@@ -475,6 +503,7 @@ async function load(studentId: string): Promise<StudentLearningSnapshot> {
       autoReleaseAtMs: null,
       reviewable: true,
       review: reviews.get(s.id) ?? null,
+      attended: null,
     });
   }
   completed.sort((a, b) => b.completedAtMs - a.completedAtMs);
@@ -511,6 +540,11 @@ async function load(studentId: string): Promise<StudentLearningSnapshot> {
       createdAtMs: ms(n.created_at),
     })),
     unreadNotifications: unreadCount ?? 0,
+    unreadMessages: ((conversationRows ?? []) as Row[]).reduce((sum, c) => sum + num(c.unread_count), 0),
+    homeworkScores: ((homeworkRows ?? []) as Row[]).flatMap((h) => {
+      const score = parseGrade(h.grade);
+      return score === null ? [] : [score];
+    }),
     hasCounselling: counselling.length > 0,
   };
 }
