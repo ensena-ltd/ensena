@@ -75,11 +75,11 @@ export function MobileGroupClassBooking({
           <Star className="size-3.5 fill-amber-400 text-amber-400" />
           <span className="font-medium">{rating.rating}</span>
           <span className="text-ensena-muted">({rating.reviews} reviews)</span>
-          {isTutorVerifiedByName(groupClass.tutorName) && (
+          {(groupClass.live ? groupClass.live.tutorVerified : isTutorVerifiedByName(groupClass.tutorName)) && (
             <>
               <span className="text-ensena-border">·</span>
               <span className="flex items-center gap-1 text-ensena-ink">
-                <VerifiedTutorBadge tutorName={groupClass.tutorName} className="size-3.5" /> Verified
+                <VerifiedTutorBadge tutorName={groupClass.tutorName} verified={groupClass.live?.tutorVerified} className="size-3.5" /> Verified
               </span>
             </>
           )}
@@ -138,7 +138,7 @@ export function MobileGroupClassBooking({
             </div>
             <div className="min-w-0">
               <p className="flex items-center gap-1 text-sm font-semibold text-ensena-ink">
-                {groupClass.tutorName} <VerifiedTutorBadge tutorName={groupClass.tutorName} className="size-3.5" />
+                {groupClass.tutorName} <VerifiedTutorBadge tutorName={groupClass.tutorName} verified={groupClass.live?.tutorVerified} className="size-3.5" />
               </p>
               <p className="truncate text-xs text-ensena-muted">{groupClass.subject} Tutor</p>
               <p className="flex items-center gap-1 text-xs text-ensena-ink">
@@ -146,9 +146,9 @@ export function MobileGroupClassBooking({
               </p>
             </div>
           </div>
-          {matchedTutor && (
+          {(groupClass.live || matchedTutor) && (
             <Link
-              href={`/find-teachers/${matchedTutor.slug}`}
+              href={groupClass.live ? `/student-dashboard/tutors/${groupClass.live.tutorId}` : `/find-teachers/${matchedTutor!.slug}`}
               className="mt-3 flex h-10 w-full items-center justify-center rounded-full border border-ensena-border text-sm font-medium text-ensena-ink hover:bg-ensena-bg-soft"
             >
               View full profile

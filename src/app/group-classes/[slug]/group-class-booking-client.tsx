@@ -43,9 +43,12 @@ function firstAvailableCohortIndex(groupClass: GroupClassListing): number {
 export function GroupClassBookingClient({
   slug,
   initialGroupClass,
+  similar,
 }: {
   slug: string;
   initialGroupClass: GroupClassListing | null;
+  /** Real similar classes (database-backed class pages). */
+  similar?: GroupClassListing[];
 }) {
   const liveGroupClass = useGroupClassBySlug(slug);
   const groupClass = initialGroupClass ?? liveGroupClass;
@@ -61,7 +64,7 @@ export function GroupClassBookingClient({
     );
   }
 
-  return <GroupClassBookingContent groupClass={groupClass} similar={getSimilarLiveGroupClasses(groupClass)} />;
+  return <GroupClassBookingContent groupClass={groupClass} similar={similar ?? getSimilarLiveGroupClasses(groupClass)} />;
 }
 
 function GroupClassBookingContent({
@@ -88,14 +91,23 @@ function GroupClassBookingContent({
   // profile (name/subjects/reviews) only when one genuinely exists in the
   // tutor roster, rather than fabricating a profile or reviews that aren't
   // real.
-  const matchedTutor = getTutorBySlug(slugify(groupClass.tutorName));
-  const hasReviews = Boolean(matchedTutor && matchedTutor.reviewList.length > 0);
+  const live = groupClass.live;
+  const matchedTutor = live ? undefined : getTutorBySlug(slugify(groupClass.tutorName));
+  const reviewList = live ? live.reviewList : (matchedTutor?.reviewList ?? []);
+  const hasReviews = reviewList.length > 0;
+  const tutorProfileHref = live ? `/student-dashboard/tutors/${live.tutorId}` : matchedTutor ? `/find-teachers/${matchedTutor.slug}` : null;
+  const listHref = live ? "/student-dashboard/group-classes" : "/group-classes";
   const rating = useTutorRating(groupClass.tutorName, groupClass.rating, groupClass.reviews);
   const isTopRated = isTopRatedTutor(groupClass.tutorName, rating.rating, rating.reviews);
-  const founding = isFoundingTutor(groupClass.tutorName);
+  const founding = live ? live.tutorFounding : isFoundingTutor(groupClass.tutorName);
   const durationMinutes = classDurationMinutes(cohort.time);
 
   function goToReview() {
+    // Already in this class: open it instead of paying again.
+    if (live?.enrolledSessionId) {
+      router.push(`/student-dashboard/group-classes/${live.id}`);
+      return;
+    }
     // No `plan` param — payment-plan choice happens on the review page
     // itself, which defaults to its own first option when none is given.
     const params = new URLSearchParams({ cohort: String(cohortIndex) });
@@ -150,7 +162,7 @@ function GroupClassBookingContent({
     />
     <div className="hidden lg:block mx-auto max-w-[1240px] px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
       <Link
-        href="/group-classes"
+        href={listHref}
         className="flex items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline"
       >
         <ChevronLeft className="size-4" /> Back to group classes
@@ -172,7 +184,7 @@ function GroupClassBookingContent({
               </h1>
               <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-ensena-ink">
                 with <span className="font-medium">{groupClass.tutorName}</span>
-                <VerifiedTutorBadge tutorName={groupClass.tutorName} />
+                <VerifiedTutorBadge tutorName={groupClass.tutorName} verified={live?.tutorVerified} />
                 {founding && <FoundingBadge kind="Tutor" compact />}
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-ensena-ink">
@@ -318,19 +330,19 @@ function GroupClassBookingContent({
               </div>
               <div className="min-w-0">
                 <p className="flex items-center gap-1 text-sm font-semibold text-ensena-ink">
-                  {groupClass.tutorName} <VerifiedTutorBadge tutorName={groupClass.tutorName} className="size-3.5" />
+                  {groupClass.tutorName} <VerifiedTutorBadge tutorName={groupClass.tutorName} verified={live?.tutorVerified} className="size-3.5" />
                 </p>
                 <p className="truncate text-xs text-ensena-muted">
-                  {groupClass.subject} Tutor · {matchedTutor ? `${matchedTutor.yearsExperience}+ years exp.` : "Ensena Teacher"}
+                  {groupClass.subject} Tutor · {live ? (live.tutorExperience ? `${live.tutorExperience} exp.` : "Ensena Teacher") : matchedTutor ? `${matchedTutor.yearsExperience}+ years exp.` : "Ensena Teacher"}
                 </p>
                 <p className="flex items-center gap-1 text-xs text-ensena-ink">
                   <Star className="size-3 fill-amber-400 text-amber-400" /> {rating.rating}
                 </p>
               </div>
             </div>
-            {matchedTutor && (
+            {tutorProfileHref && (
               <Link
-                href={`/find-teachers/${matchedTutor.slug}`}
+                href={tutorProfileHref}
                 className="mt-3 flex h-9 w-fit items-center justify-center rounded-full border border-ensena-border px-5 text-sm font-medium text-ensena-ink hover:bg-ensena-bg-soft"
               >
                 View full profile
@@ -340,16 +352,16 @@ function GroupClassBookingContent({
 
           {/* Reviews — only shown when we have a real, matched tutor to
               borrow genuine review text from. */}
-          {hasReviews && matchedTutor && (
+          {hasReviews && tutorProfileHref && (
             <div id="reviews" className="mt-6 rounded-2xl border border-ensena-border p-5 lg:p-6">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="font-heading text-base font-semibold text-ensena-ink">What students say</h2>
-                <Link href={`/find-teachers/${matchedTutor.slug}/reviews`} className="text-sm font-semibold text-ensena-primary hover:underline">
+                <Link href={live ? `${tutorProfileHref}#reviews` : `${tutorProfileHref}/reviews`} className="text-sm font-semibold text-ensena-primary hover:underline">
                   View all {rating.reviews} reviews
                 </Link>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {matchedTutor.reviewList.map((review, i) => (
+                {reviewList.map((review, i) => (
                   <div key={i} className="rounded-xl border border-ensena-border p-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold text-ensena-ink">{review.name}</p>
@@ -386,7 +398,7 @@ function GroupClassBookingContent({
         </aside>
       </div>
 
-      <SimilarGroupClassesSection title="Similar Group Classes" groupClasses={similar} viewAllLabel="View all classes" viewAllHref="/group-classes" />
+      <SimilarGroupClassesSection title="Similar Group Classes" groupClasses={similar} viewAllLabel="View all classes" viewAllHref={listHref} />
     </div>
     </>
   );

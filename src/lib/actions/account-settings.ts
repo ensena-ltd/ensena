@@ -168,3 +168,81 @@ export async function disableMyCalendarFeed(): Promise<ActionResult> {
   if (error) return { ok: false, message: isMissingSchema(error.code) ? MIGRATION_HINT : "We couldn't turn off calendar sync." };
   return { ok: true };
 }
+
+// --- Delete account ----------------------------------------------------------
+
+// Kept in step with the Delete Account form.
+const DELETE_CONFIRMATION_PHRASE = "DELETE MY ACCOUNT";
+
+// Deliberately hard to do by accident: the student must tick that they
+// understand, type the phrase exactly, and (if they have one) enter their
+// password. Lesson, payment and message history stays for the tutors and
+// records it belongs to, but the person is anonymised, their personal data
+// removed, and their sign-in deleted so the account can't be used again.
+export async function deleteMyAccount(input: { confirmation: string; password: string; acknowledged: boolean }): Promise<ActionResult & { redirectUrl?: string }> {
+  const { supabase, user } = await currentUser();
+  if (!user) return { ok: false, message: "Please sign in again." };
+  if (!input.acknowledged) return { ok: false, message: "Please confirm you understand this can't be undone." };
+  if (input.confirmation.trim() !== DELETE_CONFIRMATION_PHRASE) return { ok: false, message: `Type ${DELETE_CONFIRMATION_PHRASE} exactly to confirm.` };
+
+  const { hasPassword } = await myPasswordStatus();
+  if (hasPassword) {
+    if (!input.password || !user.email) return { ok: false, message: "Enter your password to confirm." };
+    const verifier = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { error: wrong } = await verifier.auth.signInWithPassword({ email: user.email, password: input.password });
+    if (wrong) return { ok: false, message: "That password is incorrect." };
+    await verifier.auth.signOut({ scope: "local" }).catch(() => undefined);
+  }
+
+  const admin = getServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  const [{ count: upcomingLessons }, { data: enrollments }] = await Promise.all([
+    admin.from("private_lessons").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid").in("status", ["Upcoming", "Pending"]).gt("scheduled_at", nowIso),
+    admin.from("group_class_enrollments").select("cohort_id").eq("student_id", user.id).eq("status", "Active"),
+  ]);
+  const cohortIds = ((enrollments ?? []) as { cohort_id: string }[]).map((e) => e.cohort_id);
+  const { count: upcomingGroup } = cohortIds.length
+    ? await admin.from("group_class_sessions").select("id", { count: "exact", head: true }).in("cohort_id", cohortIds).eq("status", "Scheduled").gt("scheduled_at", nowIso)
+    : { count: 0 };
+  if ((upcomingLessons ?? 0) > 0 || (upcomingGroup ?? 0) > 0) {
+    return { ok: false, message: "You still have paid classes coming up. Cancel them in My Classes (or contact Ensena Support about a refund) before deleting your account." };
+  }
+
+  // Goodbye email first, while we still have their address.
+  await notifyUser(
+    user.id,
+    {
+      category: "security",
+      title: "Your Ensena account has been deleted",
+      body: "Your Ensena account and personal details have been deleted, as you asked.",
+      details: ["If you didn't do this, contact Ensena Support straight away at support@ensena.co."],
+      url: "/",
+      ctaLabel: "Go to Ensena",
+    },
+    { security: true }
+  ).catch(() => undefined);
+
+  const scrubbed = `deleted-${user.id}@deleted.ensena.co`;
+  await Promise.all([
+    admin.from("profiles").update({ full_name: "Deleted user", email: scrubbed, avatar_url: null, phone: null, date_of_birth: null, deleted_at: nowIso }).eq("id", user.id),
+    admin.from("student_profiles").update({ phone: null, date_of_birth: null, bio: null, goal: null, subjects: [], learning_goals: [], support_types: [], profile_public: false }).eq("id", user.id),
+    admin.from("private_lessons").update({ status: "Cancelled", cancelled_at: nowIso, cancellation_reason: "Student deleted their account" }).eq("student_id", user.id).eq("payment_status", "unpaid").in("status", ["Pending", "Upcoming"]),
+    admin.from("saved_tutors").delete().eq("student_id", user.id),
+    admin.from("recently_viewed_tutors").delete().eq("student_id", user.id),
+    admin.from("study_tasks").delete().eq("student_id", user.id),
+    admin.from("push_subscriptions").delete().eq("user_id", user.id),
+    admin.from("notification_preferences").delete().eq("user_id", user.id),
+    admin.from("student_guardians").delete().eq("student_id", user.id),
+    admin.from("known_devices").delete().eq("user_id", user.id),
+    admin.from("account_settings").delete().eq("user_id", user.id),
+  ]);
+
+  await supabase.auth.signOut().catch(() => undefined);
+  // Soft delete: the sign-in is removed and can't be used again, while the
+  // rows that lessons and payments point to stay in place.
+  const { error } = await admin.auth.admin.deleteUser(user.id, true);
+  if (error) console.error("[deleteMyAccount] auth delete failed", error);
+  return { ok: true, redirectUrl: "/?account=deleted" };
+}

@@ -29,6 +29,20 @@ const whatsNextSteps = [
   { icon: Calendar, title: "Start learning", description: "Join your class on the scheduled time." },
 ];
 
+/** A real, paid enrollment (database-backed classes). */
+export interface ConfirmedEnrollment {
+  reference: string;
+  planId: string;
+  cohortIndex: number;
+  totalPaid: number;
+  nextChargeMs: number | null;
+  sessions: { id: string; startMs: number; endMs: number }[];
+}
+
+function icsStamp(ms: number) {
+  return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+
 function firstAvailableCohortIndex(groupClass: GroupClassListing): number {
   const index = groupClass.cohorts.findIndex((c) => !isCohortFull(c));
   return index === -1 ? 0 : index;
@@ -37,9 +51,11 @@ function firstAvailableCohortIndex(groupClass: GroupClassListing): number {
 export function GroupClassConfirmationClient({
   slug,
   initialGroupClass,
+  confirmed = null,
 }: {
   slug: string;
   initialGroupClass: GroupClassListing | null;
+  confirmed?: ConfirmedEnrollment | null;
 }) {
   const liveGroupClass = useGroupClassBySlug(slug);
   const groupClass = initialGroupClass ?? liveGroupClass;
@@ -55,10 +71,10 @@ export function GroupClassConfirmationClient({
     );
   }
 
-  return <GroupClassConfirmationContent groupClass={groupClass} />;
+  return <GroupClassConfirmationContent groupClass={groupClass} confirmed={confirmed} />;
 }
 
-function GroupClassConfirmationContent({ groupClass }: { groupClass: GroupClassListing }) {
+function GroupClassConfirmationContent({ groupClass, confirmed }: { groupClass: GroupClassListing; confirmed: ConfirmedEnrollment | null }) {
   const searchParams = useSearchParams();
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   const rating = useTutorRating(groupClass.tutorName, groupClass.rating, groupClass.reviews);
@@ -66,18 +82,50 @@ function GroupClassConfirmationContent({ groupClass }: { groupClass: GroupClassL
   // The real reference code minted when the student paid on the review step
   // (group-class-review-client.tsx's handleConfirmAndPay). Falls back to
   // nothing (no crash) if this page is ever reached without one.
-  const bookingReference = searchParams.get("ref");
+  const bookingReference = confirmed?.reference ?? searchParams.get("ref");
 
   const cohortParam = Number(searchParams.get("cohort"));
-  const cohortIndex = Number.isInteger(cohortParam) && groupClass.cohorts[cohortParam] ? cohortParam : firstAvailableCohortIndex(groupClass);
+  const cohortIndex = confirmed ? confirmed.cohortIndex : Number.isInteger(cohortParam) && groupClass.cohorts[cohortParam] ? cohortParam : firstAvailableCohortIndex(groupClass);
   const options = groupClassPaymentOptions(groupClass, cohortIndex);
-  const plan = searchParams.get("plan") ?? options[0].id;
+  const plan = confirmed?.planId ?? searchParams.get("plan") ?? options[0].id;
   const selected = options.find((o) => o.id === plan) ?? options[0];
 
   const cohort = groupClass.cohorts[cohortIndex];
-  const total = selected.amount;
+  const total = confirmed ? confirmed.totalPaid : selected.amount;
   const planLabel = selected.label;
-  const subscription = bookingReference && selected.mode === "recurring" ? getSubscriptionForBooking(bookingReference) : undefined;
+  const subscription = confirmed
+    ? confirmed.nextChargeMs
+      ? { nextChargeAtMs: confirmed.nextChargeMs }
+      : undefined
+    : bookingReference && selected.mode === "recurring"
+      ? getSubscriptionForBooking(bookingReference)
+      : undefined;
+  const live = groupClass.live;
+
+  function addToCalendar() {
+    if (!confirmed) return;
+    const origin = window.location.origin;
+    const events = confirmed.sessions.map((s) =>
+      [
+        "BEGIN:VEVENT",
+        `UID:${s.id}@ensena.co`,
+        `DTSTAMP:${icsStamp(Date.now())}`,
+        `DTSTART:${icsStamp(s.startMs)}`,
+        `DTEND:${icsStamp(s.endMs)}`,
+        `SUMMARY:${groupClass.title} with ${groupClass.tutorName} (Ensena)`,
+        `DESCRIPTION:Join from My Classes: ${origin}/student-dashboard/lessons?view=${s.id}`,
+        `URL:${origin}/student-dashboard/lessons?view=${s.id}`,
+        "END:VEVENT",
+      ].join("\r\n")
+    );
+    const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Ensena//Group Classes//EN", "CALSCALE:GREGORIAN", ...events, "END:VCALENDAR"].join("\r\n");
+    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ensena-${confirmed.reference}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const matchedTutor = getTutorBySlug(slugify(groupClass.tutorName));
   const firstName = groupClass.tutorName.split(" ")[0];
@@ -167,6 +215,7 @@ function GroupClassConfirmationContent({ groupClass }: { groupClass: GroupClassL
               </div>
               <button
                 type="button"
+                onClick={addToCalendar}
                 className="hidden h-9 shrink-0 items-center gap-1.5 rounded-full border border-ensena-primary/30 px-3 text-xs font-semibold text-ensena-primary hover:bg-white sm:flex"
               >
                 <Clock className="size-3.5" /> Add to Calendar
@@ -177,7 +226,15 @@ function GroupClassConfirmationContent({ groupClass }: { groupClass: GroupClassL
 
             <p className="mt-6 text-center text-sm font-semibold text-ensena-ink lg:text-left">You can now</p>
             <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-              {matchedTutor && (
+              {live && (
+                <Link
+                  href={`/student-dashboard/messages?tutor=${live.tutorId}`}
+                  className="flex h-11 items-center justify-center gap-1.5 rounded-full border border-ensena-border text-sm font-medium text-ensena-ink hover:bg-ensena-bg-soft"
+                >
+                  <MessageCircle className="size-4" /> Message {firstName}
+                </Link>
+              )}
+              {!live && matchedTutor && (
                 <button
                   type="button"
                   onClick={() => setMessageModalOpen(true)}
@@ -189,7 +246,7 @@ function GroupClassConfirmationContent({ groupClass }: { groupClass: GroupClassL
               <Button
                 variant="outline"
                 nativeButton={false}
-                render={<Link href={`/group-classes/${groupClass.slug}`} />}
+                render={<Link href={live ? `/student-dashboard/group-classes/${live.id}` : `/group-classes/${groupClass.slug}`} />}
                 className="h-11 rounded-full border-ensena-border text-sm font-medium text-ensena-ink hover:bg-ensena-bg-soft"
               >
                 View Class
@@ -226,7 +283,7 @@ function GroupClassConfirmationContent({ groupClass }: { groupClass: GroupClassL
         </div>
       </div>
 
-      {matchedTutor && (
+      {!live && matchedTutor && (
         <MessageTutorModal open={messageModalOpen} tutor={matchedTutor} onClose={() => setMessageModalOpen(false)} />
       )}
     </>

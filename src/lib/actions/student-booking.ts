@@ -23,6 +23,7 @@ import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase"
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { loadBusyIntervals, loadTutorProfile, loadTutorWeekly } from "@/lib/tutor-directory-server";
 import { recordBookingPaid } from "@/lib/booking-payments-server";
+import { isPublicOrigin } from "@/lib/site-url";
 import { requestOrigin } from "@/lib/site-url-server";
 
 // Booking, paying for and rescheduling a real tutor's private lessons.
@@ -127,6 +128,9 @@ export async function createPrivateBooking(input: CreateBookingInput): Promise<B
   const { data: studentProfile } = await admin.from("student_profiles").select("academic_detail, academic_level").eq("id", student.id).maybeSingle();
   const bookingGroupId = randomUUID();
   const notes = input.notes?.trim().slice(0, 1000) || null;
+  // Reminder emails for these lessons link back to the site they were booked on.
+  const origin = await requestOrigin();
+  const siteOrigin = isPublicOrigin(origin) ? origin : null;
 
   const rows = [];
   for (const [i, startMs] of starts.entries()) {
@@ -151,6 +155,7 @@ export async function createPrivateBooking(input: CreateBookingInput): Promise<B
       total_sessions: starts.length,
       notes,
       payment_status: "unpaid",
+      site_origin: siteOrigin,
     });
   }
   const { data: inserted, error } = await admin.from("private_lessons").insert(rows).select("id");

@@ -22,7 +22,8 @@ export function FindGroupClassesCard({ groupClass }: { groupClass: GroupClassLis
   const seatsLeft = groupClass.maxSeats - groupClass.enrolled;
   // Already paid for this class? Send them to their enrolled class page
   // instead of back through the booking/payment flow.
-  const enrolledClass = studentGroupClasses.find((c) => c.title === groupClass.title);
+  const live = groupClass.live;
+  const enrolledClass = live ? (live.enrolledSessionId ? { id: live.id } : undefined) : studentGroupClasses.find((c) => c.title === groupClass.title);
   const classHref = enrolledClass ? `/student-dashboard/group-classes/${enrolledClass.id}` : `/group-classes/${groupClass.slug}`;
 
   return (
@@ -53,7 +54,7 @@ export function FindGroupClassesCard({ groupClass }: { groupClass: GroupClassLis
       <div className="flex items-center gap-2 text-sm text-ensena-ink">
         <span className="font-medium">{groupClass.tutorName}</span>
         <span className="flex items-center gap-1 text-ensena-muted">
-          <Star className="size-3.5 fill-amber-400 text-amber-400" /> {rating.rating} ({rating.reviews})
+          <Star className="size-3.5 fill-amber-400 text-amber-400" /> {live && rating.reviews === 0 ? "New" : `${rating.rating} (${rating.reviews})`}
         </span>
       </div>
 

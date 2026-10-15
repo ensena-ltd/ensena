@@ -45,6 +45,24 @@ export interface Cohort {
   durationWeeks: number;
   seatsTotal: number;
   seatsFilled: number;
+  /** Database-backed cohorts only. */
+  id?: string;
+  /** Real number of scheduled sessions (database-backed cohorts). */
+  sessionCount?: number;
+  /** This cohort's own per-session price (database-backed cohorts). */
+  pricePerSession?: number;
+}
+
+/** Real tutor/class details, present only on classes loaded from the database. */
+export interface LiveGroupClassInfo {
+  id: string;
+  tutorId: string;
+  tutorVerified: boolean;
+  tutorFounding: boolean;
+  tutorExperience: string;
+  reviewList: { name: string; stars: number; text: string }[];
+  /** Set when the signed-in student is already enrolled in this class. */
+  enrolledSessionId?: string | null;
 }
 
 export interface PricingPlans {
@@ -83,6 +101,7 @@ export interface GroupClassListing {
   outcomeSentence: string;
   cohorts: Cohort[];
   pricing: PricingPlans;
+  live?: LiveGroupClassInfo;
 }
 
 interface Seed {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { StudentProfileClient } from "@/components/student-dashboard/profile/student-profile-client";
 import { StudentProfileReal } from "@/components/student-dashboard/profile/student-profile-real";
-import { loadReviewsAboutStudent } from "@/lib/student-profile-server";
+import { loadReviewsAboutStudent, loadStudentStanding } from "@/lib/student-profile-server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { requireRole } from "@/lib/supabase/require-role";
 
@@ -15,6 +15,8 @@ export const metadata: Metadata = {
 export default async function StudentProfilePage() {
   if (!isSupabaseConfigured()) return <StudentProfileClient />;
   const profile = await requireRole("student");
-  const reviews = profile ? await loadReviewsAboutStudent(profile.id) : [];
-  return <StudentProfileReal reviews={reviews} />;
+  const [reviews, standing] = profile
+    ? await Promise.all([loadReviewsAboutStudent(profile.id), loadStudentStanding(profile.id)])
+    : [[], { founding: false, premium: false }];
+  return <StudentProfileReal reviews={reviews} standing={standing} />;
 }

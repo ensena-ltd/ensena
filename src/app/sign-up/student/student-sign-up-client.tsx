@@ -16,6 +16,7 @@ import { checkGuardianEmail, requestGuardianConsent, type GuardianDetails } from
 import { setPendingVerificationEmail } from "@/lib/pending-verification";
 import { buildContactSupportHref } from "@/lib/support-links";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { rememberThisSignupDevice } from "@/lib/actions/device-security";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { safeRedirectPath } from "@/lib/utils";
 import { useErrorToast } from "@/hooks/use-error-toast";
@@ -126,6 +127,8 @@ export function StudentSignUpClient() {
       return { error: "An account with that email already exists. Try logging in instead." };
     }
     setPendingVerificationEmail(email.trim());
+    // Trust the browser they registered on (no login alert for it later).
+    await rememberThisSignupDevice(data.user.id).catch(() => undefined);
     return { userId: data.user.id, hasSession: !!data.session };
   }
 

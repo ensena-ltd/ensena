@@ -4,10 +4,11 @@
 // nothing left to do. The "unpaid → paid" flip is a single conditional
 // UPDATE, so even two simultaneous calls can never both record the payment.
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
-import { verifyTransaction } from "@/lib/paystack";
+import { quoteGroupEnrollment, recordGroupEnrollmentPaid } from "@/lib/group-payments-server";
+import { verifyTransaction, type PaystackTransaction } from "@/lib/paystack";
 
 export type FulfilResult =
-  | { ok: true; bookingGroupId: string; alreadyProcessed: boolean }
+  | { ok: true; bookingGroupId: string; alreadyProcessed: boolean; groupClassSlug?: string }
   | { ok: false; reason: "not-paid" | "unknown-booking" | "amount-mismatch" | "error"; message: string; bookingGroupId?: string };
 
 export async function fulfilBookingPayment(reference: string): Promise<FulfilResult> {
@@ -19,6 +20,7 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
     return { ok: false, reason: "error", message: "We couldn't reach Paystack to confirm your payment. Please refresh in a moment." };
   }
   const meta = (tx.metadata ?? {}) as Record<string, unknown>;
+  if (meta.kind === "group") return fulfilGroupPayment(tx, meta);
   const bookingGroupId = typeof meta.booking_group_id === "string" ? meta.booking_group_id : null;
   const studentId = typeof meta.student_id === "string" ? meta.student_id : null;
   if (!bookingGroupId || !studentId) return { ok: false, reason: "unknown-booking", message: "This payment isn't linked to a booking." };
@@ -38,6 +40,29 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
   }
 
   return recordBookingPaid({ bookingGroupId, studentId, amountPaid: tx.amount / 100, paidAt: tx.paid_at ?? new Date().toISOString(), provider: "paystack", reference, mode: "oneTime" });
+}
+
+// Group classes: the student is enrolled only once Paystack confirms the payment.
+async function fulfilGroupPayment(tx: PaystackTransaction, meta: Record<string, unknown>): Promise<FulfilResult> {
+  const cohortId = typeof meta.cohort_id === "string" ? meta.cohort_id : null;
+  const studentId = typeof meta.student_id === "string" ? meta.student_id : null;
+  const plan = typeof meta.plan === "string" ? meta.plan : null;
+  if (!cohortId || !studentId || !plan) return { ok: false, reason: "unknown-booking", message: "This payment isn't linked to a class." };
+  if (tx.status !== "success") return { ok: false, reason: "not-paid", message: tx.status === "abandoned" ? "The payment wasn't completed." : `Payment status: ${tx.status}.` };
+
+  const quoted = await quoteGroupEnrollment(cohortId, plan);
+  if (!quoted.ok) {
+    console.error("Paid group class can no longer be quoted", { reference: tx.reference, message: quoted.message });
+    return { ok: false, reason: "error", message: `${quoted.message} Ensena Support will refund you — please contact us with reference ${tx.reference}.` };
+  }
+  if (tx.currency !== "NGN" || tx.amount < Math.round(quoted.quote.option.amount * 100)) {
+    console.error("Paystack amount mismatch (group)", { reference: tx.reference, paid: tx.amount, expected: quoted.quote.option.amount });
+    return { ok: false, reason: "amount-mismatch", message: "The amount paid doesn't match this class. Our team has been alerted." };
+  }
+  const result = await recordGroupEnrollmentPaid({ studentId, quote: quoted.quote, amountPaid: tx.amount / 100, paidAt: tx.paid_at ?? new Date().toISOString(), provider: "paystack", reference: tx.reference });
+  return result.ok
+    ? { ok: true, bookingGroupId: result.enrollmentId, alreadyProcessed: result.alreadyProcessed, groupClassSlug: result.slug }
+    : { ok: false, reason: "error", message: result.message };
 }
 
 /**

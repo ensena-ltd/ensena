@@ -12,7 +12,7 @@ import { NeedHelpCard } from "@/components/booking/need-help-card";
 import { PaymentMethodSelector, type PaymentMethod } from "@/components/booking/payment-method-selector";
 import { GroupPaymentPlanSelector } from "@/components/booking/payment-plan-selector";
 import { PaymentProtectedBanner } from "@/components/booking/payment-protected-banner";
-import { StudentInfoForm, studentInfoDefaults } from "@/components/booking/student-info-form";
+import { StudentInfoForm, studentInfoDefaults, type StudentInfoValues } from "@/components/booking/student-info-form";
 import { WhatHappensNext } from "@/components/booking/what-happens-next";
 import {
   cohortDateRange,
@@ -21,6 +21,7 @@ import {
 } from "@/components/group-classes-page/group-class-booking-sidebar";
 import { useGroupClassBySlug } from "@/hooks/use-group-class-listings";
 import { useTutorRating } from "@/hooks/use-reviews";
+import { enrollAndPayGroupClass } from "@/lib/actions/group-enrollment";
 import { bookingBlockedMessage, studentBookingEligibilityByName, tutorBookingEligibilityByName } from "@/lib/account-permissions";
 import { formatNaira } from "@/lib/format";
 import { sendBookingEmail } from "@/lib/email-service";
@@ -55,9 +56,14 @@ function firstAvailableCohortIndex(groupClass: GroupClassListing): number {
 export function GroupClassReviewClient({
   slug,
   initialGroupClass,
+  student = null,
+  testMode = false,
 }: {
   slug: string;
   initialGroupClass: GroupClassListing | null;
+  /** The signed-in student's real details (database-backed classes). */
+  student?: StudentInfoValues | null;
+  testMode?: boolean;
 }) {
   const liveGroupClass = useGroupClassBySlug(slug);
   const groupClass = initialGroupClass ?? liveGroupClass;
@@ -73,10 +79,10 @@ export function GroupClassReviewClient({
     );
   }
 
-  return <GroupClassReviewContent groupClass={groupClass} />;
+  return <GroupClassReviewContent groupClass={groupClass} student={student} testMode={testMode} />;
 }
 
-function GroupClassReviewContent({ groupClass }: { groupClass: GroupClassListing }) {
+function GroupClassReviewContent({ groupClass, student, testMode }: { groupClass: GroupClassListing; student: StudentInfoValues | null; testMode: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rating = useTutorRating(groupClass.tutorName, groupClass.rating, groupClass.reviews);
@@ -87,7 +93,7 @@ function GroupClassReviewContent({ groupClass }: { groupClass: GroupClassListing
 
   const cohort = groupClass.cohorts[cohortIndex];
 
-  const [studentInfo, setStudentInfo] = useState(() => studentInfoDefaults(dashboardStudent.name));
+  const [studentInfo, setStudentInfo] = useState(() => student ?? studentInfoDefaults(dashboardStudent.name));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   // Defaults to whatever plan the earlier "Class & Plan" step picked, but
   // stays changeable here too — the Payment Plan section on this page is a
@@ -107,6 +113,26 @@ function GroupClassReviewContent({ groupClass }: { groupClass: GroupClassListing
   async function handleConfirmAndPay() {
     setSubmitting(true);
     setSubmitError(null);
+    // Real classes: the server prices, takes payment and enrolls.
+    if (groupClass.live) {
+      if (!cohort.id) {
+        setSubmitError("Please choose a cohort.");
+        setSubmitting(false);
+        return;
+      }
+      const result = await enrollAndPayGroupClass({ cohortId: cohort.id, planId: plan });
+      if (result.ok && result.redirectUrl) {
+        // Paystack checkout is on another site; the confirmation page is ours.
+        if (/^https?:/.test(result.redirectUrl)) window.location.href = result.redirectUrl;
+        else router.push(result.redirectUrl);
+        return;
+      }
+      setSubmitError(result.message ?? "Something went wrong. Please try again.");
+      setSubmitting(false);
+      // e.g. not signed in, or already enrolled in this class.
+      if (result.redirectUrl) router.push(result.redirectUrl === "/sign-in" ? `/sign-in?redirectTo=${encodeURIComponent(window.location.pathname + window.location.search)}` : result.redirectUrl);
+      return;
+    }
     try {
       const tutorEligibility = tutorBookingEligibilityByName(groupClass.tutorName);
       if (!tutorEligibility.allowed) {
@@ -266,6 +292,11 @@ function GroupClassReviewContent({ groupClass }: { groupClass: GroupClassListing
             <PaymentMethodSelector value={paymentMethod} onChange={setPaymentMethod} />
             <PaymentProtectedBanner />
 
+            {testMode && (
+              <p className="rounded-xl bg-indigo-50 px-4 py-3 text-xs text-indigo-800">
+                Test mode: online payments aren&apos;t switched on yet, so no money is taken. You&apos;re enrolled as if you had paid.
+              </p>
+            )}
             {submitError && (
               <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{submitError}</p>
             )}

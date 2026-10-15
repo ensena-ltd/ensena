@@ -55,7 +55,7 @@ export async function signInWithSupabase(email: string, password: string, redire
   }
 
   // Remembers this browser and sends a Login Alert if it's a new device.
-  await recordSignIn(data.user.id, role);
+  await recordSignIn(data.user.id);
 
   redirect(safeRedirectPath(redirectTo) || dashboardHrefByRole[role] || "/");
 }

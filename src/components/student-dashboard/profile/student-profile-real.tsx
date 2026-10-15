@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Camera, CheckCircle2, ChevronRight, Clock, CreditCard, Heart, HeartHandshake, Plus, Receipt, Save, Settings, Shield, Star, Target, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ChevronRight, Clock, CreditCard, Heart, HeartHandshake, Pencil, Plus, Receipt, Save, Settings, Shield, Star, Target, X, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ import { supportTypeOptions } from "@/lib/academic-support-types";
 import { requestGuardianConsent, resendGuardianConsent } from "@/lib/actions/auth";
 import { saveStudentProfile } from "@/lib/actions/student-profile";
 import { guardianRequirement, guardianRequirementMessage } from "@/lib/guardian-requirement";
-import type { StudentReview } from "@/lib/student-profile-server";
+import type { StudentReview, StudentStanding } from "@/lib/student-profile-server";
+import { FoundingBadge } from "@/components/shared/founding-badge";
 import { isDegreeLevel, subjectsForCourse, subjectsForLevel } from "@/lib/student-onboarding-subjects";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,18 @@ const chip = (on: boolean) =>
 
 // The signed-in student's profile — everything read from and saved to
 // Supabase (profiles, student_profiles, student_guardians, reviews).
-export function StudentProfileReal({ reviews }: { reviews: StudentReview[] }) {
+const EXAMS = ["WAEC", "NECO", "JAMB", "UTME", "IGCSE", "GCE", "SAT", "IELTS", "TOEFL", "GRE", "GMAT", "BECE", "Common Entrance", "A-Level", "Post-UTME"];
+
+// The exam a student is working towards, read from their goals and subjects.
+function findExamGoal(texts: string[]): string {
+  for (const t of texts) {
+    const hit = EXAMS.find((e) => new RegExp(`\\b${e.replace("-", "\\-")}\\b`, "i").test(t));
+    if (hit) return hit === "UTME" ? "JAMB" : hit;
+  }
+  return "";
+}
+
+export function StudentProfileReal({ reviews, standing = { founding: false, premium: false } }: { reviews: StudentReview[]; standing?: StudentStanding }) {
   const router = useRouter();
   const me = useStudentIdentity();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -81,6 +93,28 @@ export function StudentProfileReal({ reviews }: { reviews: StudentReview[] }) {
   const catalogue = isDegreeLevel(me.academicLevel) ? subjectsForCourse(me.course, me.academicLevel) : subjectsForLevel(me.academicLevel, me.academicDetail);
   const subjectChips = [...catalogue, ...subjects.filter((s) => !catalogue.includes(s))];
   const levelLabel = [me.academicDetail || me.academicLevel, me.course].filter(Boolean).join(" · ");
+  const examGoal = findExamGoal([...goals, ...subjects, me.goal]);
+  const [editingLevel, setEditingLevel] = useState(false);
+  const [levelDraft, setLevelDraft] = useState("");
+  const [savingLevel, setSavingLevel] = useState(false);
+
+  async function saveLevel() {
+    const value = levelDraft.trim();
+    if (!value) {
+      toast.error("Enter your level, e.g. SSS2.");
+      return;
+    }
+    setSavingLevel(true);
+    const result = await saveStudentIdentity(me.id, { student: { academic_detail: value } });
+    setSavingLevel(false);
+    if (!result.ok) {
+      toast.error("We couldn't update your level.");
+      return;
+    }
+    setEditingLevel(false);
+    toast.success("Level updated.");
+    router.refresh();
+  }
 
   function toggle(list: string[], value: string) {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -229,10 +263,47 @@ export function StudentProfileReal({ reviews }: { reviews: StudentReview[] }) {
               />
             </div>
             <div className="min-w-0">
-              <p className="font-semibold text-ensena-ink">{me.name}</p>
-              <p className="text-xs text-ensena-muted">
-                {levelLabel ? <>Level: <span className="font-medium text-ensena-ink">{levelLabel}</span></> : "Level not set"}
-                {age !== null && <> · Age {age}</>}
+              <p className="flex flex-wrap items-center gap-2 font-semibold text-ensena-ink">
+                {me.name}
+                {standing.founding && <FoundingBadge kind="Student" compact className="px-2.5 py-1 text-[11px]" />}
+              </p>
+              <p className="flex flex-wrap items-center gap-1 text-xs text-ensena-muted">
+                {editingLevel ? (
+                  <>
+                    Level:
+                    <input
+                      autoFocus
+                      value={levelDraft}
+                      onChange={(e) => setLevelDraft(e.target.value.slice(0, 60))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveLevel();
+                        if (e.key === "Escape") setEditingLevel(false);
+                      }}
+                      className="h-7 w-32 rounded-md border border-ensena-border px-2 text-xs text-ensena-ink"
+                    />
+                    <button type="button" onClick={() => void saveLevel()} disabled={savingLevel} className="font-semibold text-ensena-primary hover:underline disabled:opacity-60">
+                      {savingLevel ? "Saving…" : "Save"}
+                    </button>
+                    <button type="button" onClick={() => setEditingLevel(false)} className="text-ensena-muted hover:underline">
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {levelLabel ? <>Level: <span className="font-semibold text-ensena-ink">{levelLabel}</span></> : "Level not set"}
+                    <button type="button" aria-label="Edit level" onClick={() => { setLevelDraft(me.academicDetail || me.academicLevel); setEditingLevel(true); }} className="text-ensena-muted hover:text-ensena-primary">
+                      <Pencil className="size-3" />
+                    </button>
+                  </>
+                )}
+                {standing.premium && <span>· Premium Student</span>}
+                {age !== null && <span>· Age {age}</span>}
+              </p>
+              <p className="flex items-center gap-1 text-xs text-ensena-muted">
+                Exam Goal: <span className="font-semibold text-ensena-ink">{examGoal || "Not set"}</span>
+                <button type="button" aria-label="Edit exam goal" onClick={() => document.getElementById("learning-goals")?.scrollIntoView({ behavior: "smooth" })} className="text-ensena-muted hover:text-ensena-primary">
+                  <Pencil className="size-3" />
+                </button>
               </p>
               <p className="text-xs text-ensena-muted">{me.email}</p>
             </div>
@@ -316,7 +387,7 @@ export function StudentProfileReal({ reviews }: { reviews: StudentReview[] }) {
         </Card>
 
         {/* Learning goals */}
-        <Card title="Learning Goals" icon={Target}>
+        <Card title="Learning Goals" icon={Target} id="learning-goals">
           {goals.length === 0 ? (
             <p className="text-sm text-ensena-muted">No goals yet — add one below.</p>
           ) : (

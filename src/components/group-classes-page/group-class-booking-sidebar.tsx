@@ -37,7 +37,7 @@ export function daysPerWeekFor(groupClass: GroupClassListing, cohortIndex: numbe
 export function groupClassSessionStats(groupClass: GroupClassListing, cohortIndex: number) {
   const cohort = groupClass.cohorts[cohortIndex];
   const sessionsPerWeek = daysPerWeekFor(groupClass, cohortIndex);
-  const sessionCount = buildGroupSessionSchedule(cohort.days, cohort.startDate, cohort.durationWeeks, cohort.startDate).length;
+  const sessionCount = cohort.sessionCount ?? buildGroupSessionSchedule(cohort.days, cohort.startDate, cohort.durationWeeks, cohort.startDate).length;
   return { sessionCount, sessionsPerWeek, totalWeeks: cohort.durationWeeks };
 }
 
@@ -46,7 +46,8 @@ export function groupClassSessionStats(groupClass: GroupClassListing, cohortInde
 // it's deliberately excluded here rather than sold and left unfulfillable.
 export function groupClassPaymentOptions(groupClass: GroupClassListing, cohortIndex: number): PaymentOption[] {
   const stats = groupClassSessionStats(groupClass, cohortIndex);
-  return computePaymentOptions({ ...stats, pricePerSession: groupClass.pricing.perSession }).filter((o) => o.id !== "installment");
+  const pricePerSession = groupClass.cohorts[cohortIndex].pricePerSession ?? groupClass.pricing.perSession;
+  return computePaymentOptions({ ...stats, pricePerSession }).filter((o) => o.id !== "installment");
 }
 
 // Class detail + reservation card: the teacher sets the recurring schedule,

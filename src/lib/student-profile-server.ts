@@ -84,3 +84,32 @@ export async function loadSavedTutors(studentId: string): Promise<SavedTutorCard
     return [];
   }
 }
+
+export interface StudentStanding {
+  /** One of the first 50 students to join Ensena. */
+  founding: boolean;
+  /** On a monthly plan, auto-pay or a full-course group class right now. */
+  premium: boolean;
+}
+
+export const FOUNDING_STUDENT_LIMIT = 50;
+
+export async function loadStudentStanding(studentId: string): Promise<StudentStanding> {
+  try {
+    const admin = getServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const monthAgoIso = new Date(Date.now() - 31 * 86_400_000).toISOString();
+    const [{ data: first }, { count: subs }, { count: monthly }, { count: groupPlans }] = await Promise.all([
+      admin.from("profiles").select("id").eq("role", "student").is("deleted_at", null).order("created_at").limit(FOUNDING_STUDENT_LIMIT),
+      admin.from("subscriptions").select("id", { count: "exact", head: true }).eq("student_id", studentId).eq("status", "active"),
+      admin.from("private_lessons").select("id", { count: "exact", head: true }).eq("student_id", studentId).eq("frequency", "monthly").eq("payment_status", "paid").gt("scheduled_at", nowIso),
+      admin.from("payment_plans").select("id", { count: "exact", head: true }).eq("student_id", studentId).eq("kind", "Group").in("scope", ["month", "full"]).eq("status", "paid").gte("paid_at", monthAgoIso),
+    ]);
+    return {
+      founding: ((first ?? []) as { id: string }[]).some((p) => p.id === studentId),
+      premium: (subs ?? 0) > 0 || (monthly ?? 0) > 0 || (groupPlans ?? 0) > 0,
+    };
+  } catch {
+    return { founding: false, premium: false };
+  }
+}

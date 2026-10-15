@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Headphones, Search } from "lucide-react";
 
@@ -12,11 +13,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FindGroupClassesCard } from "@/components/student-dashboard/group-classes/find-group-classes-card";
+import { useStudentIdentity } from "@/components/student-dashboard/student-identity";
 import { useReviews } from "@/hooks/use-reviews";
 import { useGroupClassListings } from "@/hooks/use-group-class-listings";
 import { computeEffectiveTutorRating } from "@/lib/reviews-store";
 import { dashboardStudent } from "@/lib/student-dashboard-data";
-import { sortOptions, subjectFilterOptions, type GroupClassSortOption } from "@/lib/group-classes-data";
+import { sortOptions, subjectFilterOptions, type GroupClassListing, type GroupClassSortOption } from "@/lib/group-classes-data";
 
 // Reuses the exact same group-class dataset as the public /group-classes
 // page (groupClassListings) — this is a new dashboard-embedded layout, not
@@ -30,6 +32,8 @@ const ALL_EXAMS = "All Exams";
 const ANY_DAY = "Any Day";
 const LEVEL_OPTIONS = ["Primary", "Secondary", "Undergraduate", "Masters", "PhD"];
 const EXAM_OPTIONS = ["WAEC / NECO", "JAMB / UTME"];
+const EXAM_KEYWORDS: Record<string, RegExp> = { "WAEC / NECO": /waec|neco|ssce/i, "JAMB / UTME": /jamb|utme/i };
+const norm = (v: string) => v.trim().toLowerCase();
 const DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const PRICE_BANDS: { label: string; maxPrice: number }[] = [
   { label: "Any price", maxPrice: Infinity },
@@ -65,16 +69,27 @@ function FieldSelect({
   );
 }
 
-export function FindGroupClassesClient() {
+// `listings`: the real published classes (signed-in students). Without it
+// the page shows the demo catalogue.
+export function FindGroupClassesClient({ listings }: { listings?: GroupClassListing[] } = {}) {
   const reviews = useReviews();
-  const groupClassListings = useGroupClassListings();
-  const [query, setQuery] = useState("");
+  const demoListings = useGroupClassListings();
+  const groupClassListings = listings ?? demoListings;
+  const live = listings !== undefined;
+  const me = useStudentIdentity();
+  const studentLevel = live ? me.level || me.academicLevel : dashboardStudent.level;
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [subject, setSubject] = useState(ALL_SUBJECTS);
   const [level, setLevel] = useState(ALL_LEVELS);
   const [exam, setExam] = useState(ALL_EXAMS);
   const [day, setDay] = useState(ANY_DAY);
   const [priceLabel, setPriceLabel] = useState(PRICE_BANDS[0].label);
   const [sort, setSort] = useState<GroupClassSortOption>("Popular");
+
+  // Real classes: subject and level choices come from the classes on offer.
+  const subjectOptions = live ? [...new Set(groupClassListings.map((c) => c.subject))].sort() : subjectFilterOptions;
+  const levelOptions = live ? [...new Set(groupClassListings.flatMap((c) => [c.levelBadge, c.gradeLevel]))].sort() : LEVEL_OPTIONS;
 
   const maxPrice = PRICE_BANDS.find((b) => b.label === priceLabel)?.maxPrice ?? Infinity;
   const hasActiveFilters =
@@ -95,8 +110,8 @@ export function FindGroupClassesClient() {
         return false;
       }
       if (subject !== ALL_SUBJECTS && cls.subject !== subject) return false;
-      if (level !== ALL_LEVELS && cls.levelBadge !== level) return false;
-      if (exam !== ALL_EXAMS && cls.levelBadge !== exam) return false;
+      if (level !== ALL_LEVELS && cls.levelBadge !== level && !(live && cls.gradeLevel === level)) return false;
+      if (exam !== ALL_EXAMS && cls.levelBadge !== exam && !(live && EXAM_KEYWORDS[exam]?.test(`${cls.title} ${cls.levelBadge} ${cls.gradeLevel}`))) return false;
       if (day !== ANY_DAY && !cls.days.includes(day)) return false;
       if (cls.price > maxPrice) return false;
       return true;
@@ -118,11 +133,14 @@ export function FindGroupClassesClient() {
     });
 
     return list;
-  }, [query, subject, level, exam, day, maxPrice, sort, reviews, groupClassListings]);
+  }, [query, subject, level, exam, day, maxPrice, sort, reviews, groupClassListings, live]);
 
   const recommended = useMemo(
-    () => groupClassListings.filter((cls) => cls.gradeLevel === dashboardStudent.level).slice(0, 6),
-    [groupClassListings]
+    () =>
+      groupClassListings
+        .filter((cls) => (live ? [cls.gradeLevel, cls.levelBadge].some((l) => norm(l) === norm(studentLevel) || norm(l) === norm(me.academicLevel)) : cls.gradeLevel === studentLevel))
+        .slice(0, 6),
+    [groupClassListings, live, studentLevel, me.academicLevel]
   );
 
   return (
@@ -145,8 +163,8 @@ export function FindGroupClassesClient() {
 
       <div className="mt-3 flex items-end gap-3 overflow-x-auto pb-1 [scrollbar-width:none] lg:overflow-visible [&::-webkit-scrollbar]:hidden">
         <div className="grid min-w-[640px] shrink-0 grid-cols-5 gap-2 lg:min-w-0 lg:flex-1">
-          <FieldSelect label="Subject" value={subject} options={[ALL_SUBJECTS, ...subjectFilterOptions]} onChange={setSubject} />
-          <FieldSelect label="Academic Level" value={level} options={[ALL_LEVELS, ...LEVEL_OPTIONS]} onChange={setLevel} />
+          <FieldSelect label="Subject" value={subject} options={[ALL_SUBJECTS, ...subjectOptions]} onChange={setSubject} />
+          <FieldSelect label="Academic Level" value={level} options={[ALL_LEVELS, ...levelOptions]} onChange={setLevel} />
           <FieldSelect label="Exam" value={exam} options={[ALL_EXAMS, ...EXAM_OPTIONS]} onChange={setExam} />
           <FieldSelect label="Day" value={day} options={[ANY_DAY, ...DAY_OPTIONS]} onChange={setDay} />
           <FieldSelect label="Price" value={priceLabel} options={PRICE_BANDS.map((b) => b.label)} onChange={setPriceLabel} />
@@ -167,7 +185,7 @@ export function FindGroupClassesClient() {
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <div className="flex items-center gap-2">
               <h2 className="whitespace-nowrap font-heading text-lg font-semibold text-ensena-ink">Recommended for You</h2>
-              <span className="whitespace-nowrap rounded-full bg-ensena-secondary px-2.5 py-0.5 text-xs font-semibold text-ensena-ink">{dashboardStudent.level}</span>
+              <span className="whitespace-nowrap rounded-full bg-ensena-secondary px-2.5 py-0.5 text-xs font-semibold text-ensena-ink">{studentLevel}</span>
             </div>
             {recommended.length > 0 && (
               <button
@@ -175,7 +193,7 @@ export function FindGroupClassesClient() {
                 onClick={() => document.getElementById("all-group-classes")?.scrollIntoView({ behavior: "smooth" })}
                 className="flex items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline"
               >
-                View all for {dashboardStudent.level} <ArrowRight className="size-3.5" />
+                View all for {studentLevel} <ArrowRight className="size-3.5" />
               </button>
             )}
           </div>
@@ -189,7 +207,7 @@ export function FindGroupClassesClient() {
             </div>
           ) : (
             <div className="mt-4 rounded-2xl border border-dashed border-ensena-border p-6 text-center">
-              <p className="text-sm text-ensena-muted">No group classes for {dashboardStudent.level} right now.</p>
+              <p className="text-sm text-ensena-muted">No group classes for {studentLevel} right now.</p>
               <button
                 type="button"
                 onClick={() => document.getElementById("all-group-classes")?.scrollIntoView({ behavior: "smooth" })}
@@ -240,7 +258,7 @@ export function FindGroupClassesClient() {
               <p className="text-xs text-ensena-muted">Not sure which class is right for you?</p>
             </div>
             <Link
-              href="/student-dashboard/messages"
+              href="/student-dashboard/counselling"
               className="flex h-9 shrink-0 items-center justify-center rounded-full border border-ensena-primary px-3.5 text-xs font-semibold text-ensena-primary"
             >
               Talk to a Counsellor
@@ -275,7 +293,7 @@ export function FindGroupClassesClient() {
             <p className="text-sm font-semibold text-ensena-ink">Need help?</p>
             <p className="mt-1 text-xs text-ensena-muted">Not sure which class is right for you?</p>
             <Link
-              href="/student-dashboard/messages"
+              href="/student-dashboard/counselling"
               className="mt-3 flex h-9 w-full items-center justify-center rounded-full border border-ensena-primary text-xs font-semibold text-ensena-primary hover:bg-ensena-primary/10"
             >
               Talk to a Counsellor

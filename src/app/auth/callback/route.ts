@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
 
   // Fully registered Google sign-in: remember this browser and send a Login
   // Alert if it's a new device.
-  await recordSignIn(user.id, role);
+  await recordSignIn(user.id);
 
   return NextResponse.redirect(`${origin}${redirectTo || dashboardHrefByRole[role] || "/"}`);
 }

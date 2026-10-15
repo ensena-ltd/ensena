@@ -3,11 +3,17 @@ import type { Metadata } from "next";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { MobileGroupClassHeader } from "@/components/group-classes-page/mobile-group-class-header";
-import { getGroupClassBySlug, groupClassListings } from "@/lib/group-classes-data";
+import { getGroupClassBySlug, type GroupClassListing } from "@/lib/group-classes-data";
+import { loadGroupClassBySlug, loadPublishedGroupClasses, similarClasses } from "@/lib/group-classes-server";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { GroupClassBookingClient } from "./group-class-booking-client";
 
-export function generateStaticParams() {
-  return groupClassListings.map((cls) => ({ slug: cls.slug }));
+
+async function viewerId(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+  const { data } = await (await getSupabaseServerClient()).auth.getUser();
+  return data.user?.id ?? null;
 }
 
 export async function generateMetadata({
@@ -16,7 +22,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const cls = getGroupClassBySlug(slug);
+  const cls = (isSupabaseConfigured() ? await loadGroupClassBySlug(slug) : null) ?? getGroupClassBySlug(slug);
 
   if (!cls) return { title: "Group class not found | Ensena" };
 
@@ -38,7 +44,11 @@ export default async function GroupClassDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const cls = getGroupClassBySlug(slug) ?? null;
+  // Published classes from the database first; the demo catalogue otherwise.
+  const live = isSupabaseConfigured() ? await loadGroupClassBySlug(slug, await viewerId()) : null;
+  const cls = live ?? getGroupClassBySlug(slug) ?? null;
+  let similar: GroupClassListing[] | undefined;
+  if (live) similar = similarClasses(await loadPublishedGroupClasses(), live);
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -47,7 +57,7 @@ export default async function GroupClassDetailPage({
       </div>
       <MobileGroupClassHeader />
       <main className="flex-1">
-        <GroupClassBookingClient slug={slug} initialGroupClass={cls} />
+        <GroupClassBookingClient slug={slug} initialGroupClass={cls} similar={similar} />
       </main>
       <div className="hidden lg:block">
         <Footer />

@@ -8,6 +8,7 @@ import webpush from "web-push";
 
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { isResendConfigured, sendEmail } from "@/lib/resend";
+import { isPublicOrigin } from "@/lib/site-url";
 
 export type NotificationCategory = "booking" | "homework" | "reminder" | "test" | "security";
 
@@ -22,6 +23,8 @@ export interface UserNotification {
   /** Optional extra email lines (each its own paragraph). */
   details?: string[];
   ctaLabel?: string;
+  /** Optional second (outlined) email button, e.g. "No, this wasn't me". */
+  secondaryCta?: { label: string; url: string };
 }
 
 export interface NotificationPreferences {
@@ -62,8 +65,12 @@ function escapeHtml(v: string) {
   return v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-function notificationEmail(name: string, n: UserNotification) {
-  const link = n.url ? `${siteUrl()}${n.url}` : siteUrl();
+// `base`: the site this person last used (profiles.site_origin), so links
+// open where they actually use Ensena; SITE_URL when we don't know.
+function notificationEmail(name: string, n: UserNotification, base: string) {
+  const absolute = (url: string) => (/^https?:\/\//.test(url) ? url : `${base}${url}`);
+  const link = n.url ? absolute(n.url) : base;
+  const secondary = n.secondaryCta ? absolute(n.secondaryCta.url) : null;
   const paragraphs = [n.body, ...(n.details ?? [])];
   const html = `<!doctype html><html><body style="margin:0;background:#f7f8fa;font-family:Arial,Helvetica,sans-serif;color:#1f2430;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
@@ -71,10 +78,10 @@ function notificationEmail(name: string, n: UserNotification) {
 <tr><td style="font-size:22px;font-weight:bold;color:#f80248;padding-bottom:24px;">ensena</td></tr>
 <tr><td style="font-size:18px;font-weight:bold;padding-bottom:12px;">Hi ${escapeHtml(name.split(" ")[0] || "there")},</td></tr>
 ${paragraphs.map((p) => `<tr><td style="font-size:15px;line-height:1.6;color:#4b5060;padding-bottom:14px;">${escapeHtml(p)}</td></tr>`).join("")}
-<tr><td align="center" style="padding:10px 0 24px;"><a href="${escapeHtml(link)}" style="display:inline-block;background:#f80248;color:#fff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:999px;">${escapeHtml(n.ctaLabel ?? "Open Ensena")}</a></td></tr>
+<tr><td align="center" style="padding:10px 0 24px;"><a href="${escapeHtml(link)}" style="display:inline-block;background:#f80248;color:#fff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:999px;">${escapeHtml(n.ctaLabel ?? "Open Ensena")}</a>${secondary ? `<br><br><a href="${escapeHtml(secondary)}" style="display:inline-block;background:#fff;color:#f80248;border:2px solid #f80248;text-decoration:none;font-weight:bold;font-size:15px;padding:12px 26px;border-radius:999px;">${escapeHtml(n.secondaryCta!.label)}</a>` : ""}</td></tr>
 <tr><td style="font-size:12px;line-height:1.6;color:#8a8f9c;">${n.category === "security" ? "This is a security notice about your Ensena account. Ensena will never ask for your password by email." : "You're getting this because email notifications are on in your Ensena settings. You can turn them off anytime under Settings → Notifications."}</td></tr>
 </table></td></tr></table></body></html>`;
-  const text = [`Hi ${name.split(" ")[0] || "there"},`, "", ...paragraphs, "", link, "", n.category === "security" ? "This is a security notice about your Ensena account." : "Turn these emails off under Settings → Notifications."].join("\n");
+  const text = [`Hi ${name.split(" ")[0] || "there"},`, "", ...paragraphs, "", `${n.ctaLabel ?? "Open Ensena"}: ${link}`, ...(secondary ? [`${n.secondaryCta!.label}: ${secondary}`] : []), "", n.category === "security" ? "This is a security notice about your Ensena account." : "Turn these emails off under Settings → Notifications."].join("\n");
   return { subject: n.title, html, text };
 }
 
@@ -108,7 +115,7 @@ export interface DeliveryResult {
 // only if they have push on.
 export async function notifyUser(userId: string, n: UserNotification, opts: { force?: "email" | "push"; security?: boolean } = {}): Promise<DeliveryResult> {
   const admin = getServiceRoleClient();
-  const [prefs, { data: person }] = await Promise.all([getPreferences(userId), admin.from("profiles").select("full_name, email").eq("id", userId).maybeSingle()]);
+  const [prefs, { data: person }] = await Promise.all([getPreferences(userId), admin.from("profiles").select("full_name, email, site_origin").eq("id", userId).maybeSingle()]);
   const result: DeliveryResult = { email: "off", push: "off" };
 
   const wantEmail = opts.force ? opts.force === "email" : opts.security || prefs.email;
@@ -116,7 +123,7 @@ export async function notifyUser(userId: string, n: UserNotification, opts: { fo
     if (!isResendConfigured()) {
       result.email = "unavailable";
     } else {
-      const sent = await sendEmail({ to: person.email, from: NOTIFICATIONS_FROM, ...notificationEmail(person.full_name ?? "", n) });
+      const sent = await sendEmail({ to: person.email, from: NOTIFICATIONS_FROM, ...notificationEmail(person.full_name ?? "", n, isPublicOrigin(person.site_origin) ? person.site_origin : siteUrl()) });
       result.email = sent.ok ? "sent" : "failed";
       if (!sent.ok) console.error("[notifyUser] email failed:", sent.error);
     }

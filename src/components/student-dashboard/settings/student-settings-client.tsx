@@ -22,12 +22,15 @@ import { toast } from "sonner";
 import { sendTestNotification, updateMyAccount, updateMyNotificationPreferences } from "@/lib/actions/notifications";
 import type { NotificationPreferences } from "@/lib/notifications";
 import { currentPushSubscription, disablePush, enablePush, pushSupport } from "@/lib/push-client";
-import { changeMyPassword, disableMyCalendarFeed, getMyCalendarFeed, updateMyLoginAlerts, updateMyPrivacy, updateMyTheme } from "@/lib/actions/account-settings";
+import { changeMyPassword, deleteMyAccount, disableMyCalendarFeed, getMyCalendarFeed, updateMyLoginAlerts, updateMyPrivacy, updateMyTheme } from "@/lib/actions/account-settings";
 import { applyTheme, readThemeCookie, writeThemeCookie, type ThemePreference } from "@/lib/theme";
 import { saveStudentIdentity, useStudentIdentity } from "@/components/student-dashboard/student-identity";
 import { dashboardStudent, studentProfileDetail } from "@/lib/student-dashboard-data";
 import { cn } from "@/lib/utils";
 import { currentOrigin } from "@/lib/site-url";
+
+// Must match the phrase checked by deleteMyAccount.
+const DELETE_PHRASE = "DELETE MY ACCOUNT";
 
 const tabs = ["Account", "Notifications", "Privacy", "Security", "Payment Methods", "Calendar Sync", "Theme", "Delete Account"] as const;
 type Tab = (typeof tabs)[number];
@@ -293,7 +296,7 @@ export function StudentSettingsClient({
       toast.error(result.message ?? "Couldn't save your login alert setting.");
       return;
     }
-    toast.success(on ? `Login alerts on — we'll email ${me.email || "you"} when your account is signed in to from a new device.` : "Login alerts off.");
+    toast.success(on ? `Login alerts on — when a new device signs in, we'll email ${me.email || "you"} to ask if it was you.` : "Login alerts off.");
   }
 
   // --- Calendar sync ---
@@ -356,6 +359,38 @@ export function StudentSettingsClient({
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [deleteAck, setDeleteAck] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteReady = deleteAck && deleteText.trim() === DELETE_PHRASE && (!hasPassword || !!deletePassword);
+
+  function closeDeleteModal() {
+    if (deleting) return;
+    setDeleteOpen(false);
+    setDeleteAck(false);
+    setDeleteText("");
+    setDeletePassword("");
+    setDeleteError(null);
+  }
+
+  async function submitDeleteAccount() {
+    if (!deleteReady) return;
+    if (!me.id) {
+      setDeleteConfirmed(true);
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await deleteMyAccount({ confirmation: deleteText, password: deletePassword, acknowledged: deleteAck });
+    if (!result.ok) {
+      setDeleting(false);
+      setDeleteError(result.message ?? "We couldn't delete your account.");
+      return;
+    }
+    window.location.href = result.redirectUrl ?? "/";
+  }
 
   function flash(message: string) {
     toast(message);
@@ -812,21 +847,62 @@ export function StudentSettingsClient({
         )}
       </div>
 
-      <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Confirm Account Deletion">
+      <Modal open={deleteOpen} onClose={closeDeleteModal} title="Confirm Account Deletion">
         {deleteConfirmed ? (
           <p className="text-sm text-ensena-ink">Your deletion request has been received. Since this is a demo environment, no account was actually deleted.</p>
         ) : (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-ensena-muted">Are you sure you want to delete your Ensena student account? This action is irreversible.</p>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitDeleteAccount();
+            }}
+          >
+            <p className="text-sm text-ensena-muted">Are you sure you want to delete your Ensena student account? This action is irreversible. You will permanently lose:</p>
+            <ul className="list-disc rounded-xl bg-rose-50 py-3 pl-8 pr-3 text-sm text-rose-800">
+              <li>Your profile, learning goals and saved tutors</li>
+              <li>Access to your lessons, homework, progress and messages</li>
+              <li>Any unpaid bookings (they&apos;ll be cancelled)</li>
+            </ul>
+            <label className="flex items-start gap-2 text-sm text-ensena-ink">
+              <input type="checkbox" checked={deleteAck} onChange={(e) => setDeleteAck(e.target.checked)} className="mt-0.5 size-4 accent-rose-600" />
+              I understand that deleting my account is permanent and cannot be undone.
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium text-ensena-muted">
+                To confirm, type <span className="font-mono font-semibold text-rose-600">{DELETE_PHRASE}</span> below
+              </span>
+              <input
+                value={deleteText}
+                onChange={(e) => setDeleteText(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                onPaste={(e) => e.preventDefault()}
+                placeholder={DELETE_PHRASE}
+                className="h-10 rounded-lg border border-ensena-border px-3 font-mono text-sm"
+              />
+            </label>
+            {hasPassword && (
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-xs font-medium text-ensena-muted">Your password</span>
+                <input type="password" autoComplete="current-password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} className="h-10 rounded-lg border border-ensena-border px-3 text-sm" />
+              </label>
+            )}
+            {deleteError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{deleteError}</p>}
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)} className="h-10 flex-1 rounded-full border-ensena-border text-sm font-medium">
+              <Button type="button" variant="outline" onClick={closeDeleteModal} disabled={deleting} className="h-10 flex-1 rounded-full border-ensena-border text-sm font-medium">
                 Cancel
               </Button>
-              <Button onClick={() => setDeleteConfirmed(true)} className="h-10 flex-1 rounded-full bg-rose-600 text-sm font-semibold text-white hover:bg-rose-700">
+              <Button
+                type="submit"
+                loading={deleting}
+                disabled={!deleteReady}
+                className="h-10 flex-1 rounded-full bg-rose-600 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
                 Yes, Delete
               </Button>
             </div>
-          </div>
+          </form>
         )}
       </Modal>
 

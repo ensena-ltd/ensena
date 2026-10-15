@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { notifyOnce } from "@/lib/notifications";
+import { isPublicOrigin } from "@/lib/site-url";
 
 // Scheduled job (e.g. every 15 minutes) that sends:
 //   - lesson reminders: private lessons starting within the next 24 hours
@@ -44,19 +45,21 @@ export async function GET(request: NextRequest) {
   // Lesson reminders
   const { data: lessons } = await admin
     .from("private_lessons")
-    .select("id, student_id, tutor_id, subject, scheduled_at, status")
+    .select("id, student_id, tutor_id, subject, scheduled_at, status, site_origin")
     .in("status", ["Upcoming", "Pending"])
     .gte("scheduled_at", now.toISOString())
     .lte("scheduled_at", in24h);
-  for (const l of (lessons ?? []) as { id: string; student_id: string | null; tutor_id: string | null; subject: string; scheduled_at: string }[]) {
+  for (const l of (lessons ?? []) as { id: string; student_id: string | null; tutor_id: string | null; subject: string; scheduled_at: string; site_origin: string | null }[]) {
     const when = fmt(l.scheduled_at);
+    // Link back to the site the lesson was booked on (else each person's last-used site).
+    const base = isPublicOrigin(l.site_origin) ? l.site_origin : "";
     if (l.student_id) {
       const tutor = await nameOf(l.tutor_id);
-      if (await notifyOnce(l.student_id, "lesson_reminder_24h", l.id, { category: "reminder", title: `Reminder: ${l.subject} lesson ${when}`, body: `Your ${l.subject} lesson with ${tutor} starts ${when}.`, url: "/student-dashboard/lessons/upcoming", ctaLabel: "View lesson" })) counts.lessonReminders++;
+      if (await notifyOnce(l.student_id, "lesson_reminder_24h", l.id, { category: "reminder", title: `Reminder: ${l.subject} lesson ${when}`, body: `Your ${l.subject} lesson with ${tutor} starts ${when}.`, url: `${base}/student-dashboard/lessons?view=${l.id}`, ctaLabel: "View lesson" })) counts.lessonReminders++;
     }
     if (l.tutor_id) {
       const student = l.student_id ? await nameOf(l.student_id) : "your student";
-      if (await notifyOnce(l.tutor_id, "lesson_reminder_24h", l.id, { category: "reminder", title: `Reminder: ${l.subject} lesson ${when}`, body: `You're teaching ${l.subject} to ${student} ${when}.`, url: "/tutor-dashboard/private-lessons", ctaLabel: "View lesson" })) counts.lessonReminders++;
+      if (await notifyOnce(l.tutor_id, "lesson_reminder_24h", l.id, { category: "reminder", title: `Reminder: ${l.subject} lesson ${when}`, body: `You're teaching ${l.subject} to ${student} ${when}.`, url: `${base}/tutor-dashboard/private-lessons`, ctaLabel: "View lesson" })) counts.lessonReminders++;
     }
   }
 

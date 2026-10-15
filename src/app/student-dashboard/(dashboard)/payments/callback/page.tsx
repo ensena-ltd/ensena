@@ -22,6 +22,7 @@ export default async function PaymentCallbackPage({ searchParams }: { searchPara
   const success = result?.ok === true;
 
   // A paid booking goes straight to its confirmation page.
+  if (profile && result?.ok && result.groupClassSlug) redirect(`/group-classes/${result.groupClassSlug}/confirmation?enrollment=${result.bookingGroupId}`);
   if (profile && result?.ok) {
     const { data: lesson } = await getServiceRoleClient().from("private_lessons").select("tutor_id").eq("booking_group_id", result.bookingGroupId).eq("student_id", profile.id).limit(1).maybeSingle();
     if (lesson?.tutor_id) redirect(`/student-dashboard/tutors/${lesson.tutor_id}/book/confirmation?booking=${result.bookingGroupId}`);

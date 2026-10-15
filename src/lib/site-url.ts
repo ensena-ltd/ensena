@@ -24,6 +24,18 @@ function isTrustedHost(host: string): boolean {
   return [...extra, ...vercel].includes(name);
 }
 
+// An origin worth remembering for later emails: a real site, not a local
+// dev server (a link to localhost is useless from someone's inbox).
+export function isPublicOrigin(origin: string | null | undefined): origin is string {
+  if (!origin) return false;
+  try {
+    const { host, protocol } = new URL(origin);
+    return protocol === "https:" && !LOCAL_HOST.test(host) && isTrustedHost(host);
+  } catch {
+    return false;
+  }
+}
+
 // Server-side: the origin a request came in on, from its headers.
 export function originFromHeaders(h: Headers): string {
   const host = (h.get("x-forwarded-host") ?? h.get("host") ?? "").split(",")[0].trim().toLowerCase();

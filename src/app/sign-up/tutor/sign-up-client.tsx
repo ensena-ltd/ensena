@@ -20,6 +20,7 @@ import { setCurrentSession } from "@/lib/session-store";
 import { recordSignup } from "@/lib/signup-events-store";
 import { buildContactSupportHref } from "@/lib/support-links";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { rememberThisSignupDevice } from "@/lib/actions/device-security";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { dashboardHrefByRole, type AppRole } from "@/lib/supabase/roles";
 import { createDefaultTutorSignupForm, type TutorSignupForm } from "@/lib/tutor-signup-data";
@@ -373,6 +374,8 @@ export function SignUpClient() {
       return;
     }
 
+    // Trust the browser they registered on (no login alert for it later).
+    await rememberThisSignupDevice(data.user.id).catch(() => undefined);
     const photoError = await uploadPhoto(data.user.id);
     setSubmitting(false);
     if (photoError) {

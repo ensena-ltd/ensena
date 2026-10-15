@@ -135,6 +135,7 @@ export interface StudentAccountNavItem {
 // rendered separately as a styled button, matching the inert Logout
 // pattern used in the admin dashboard (no real auth/session to tear down).
 export const studentAccountNavItems: StudentAccountNavItem[] = [
+  { label: "Promotions & Offers", href: "/student-dashboard/promotions" },
   { label: "Profile", href: "/student-dashboard/profile" },
   { label: "Settings", href: "/student-dashboard/settings" },
 ];
@@ -153,6 +154,7 @@ export const studentProfileMenuItems: StudentProfileMenuItem[] = [
   { label: "Payment History", href: "/student-dashboard/transactions" },
   { label: "Account Settings", href: "/student-dashboard/settings?tab=Account" },
   { label: "Notifications", href: "/student-dashboard/notifications" },
+  { label: "Promotions & Offers", href: "/student-dashboard/promotions" },
   { label: "Security", href: "/student-dashboard/settings?tab=Security" },
 ];
 
