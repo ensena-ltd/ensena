@@ -6,6 +6,7 @@ import { FindATutorReal } from "@/components/student-dashboard/live/find-a-tutor
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { requireRole } from "@/lib/supabase/require-role";
+import { getPlatformNowMs } from "@/lib/platform-time";
 import { listApprovedTutors } from "@/lib/tutor-directory-server";
 
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default async function FindATutorPage() {
   const studentSubjects = [...((student?.subjects as string[] | null) ?? []), ...(student?.course ? [student.course as string] : [])];
   return (
     <Suspense fallback={null}>
-      <FindATutorReal tutors={tutors} savedIds={(saved ?? []).map((s) => s.tutor_id as string)} studentSubjects={studentSubjects} />
+      <FindATutorReal tutors={tutors} savedIds={(saved ?? []).map((s) => s.tutor_id as string)} studentSubjects={studentSubjects} generatedAtMs={getPlatformNowMs()} />
     </Suspense>
   );
 }

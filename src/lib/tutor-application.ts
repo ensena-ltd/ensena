@@ -65,6 +65,8 @@ export interface TutorApplicationFields {
   graduationYear: string;
   linkedin: string;
   website: string;
+  /** The reply time the tutor committed to at sign-up, e.g. "Within 1 hour". */
+  responseTime: string;
 }
 
 export function parseTutorApplication(app: Record<string, unknown> | null | undefined): TutorApplicationFields {
@@ -106,5 +108,6 @@ export function parseTutorApplication(app: Record<string, unknown> | null | unde
     graduationYear: str(a.graduationYear),
     linkedin: str(a.linkedin),
     website: str(a.website),
+    responseTime: str(a.responseTimeGoal),
   };
 }

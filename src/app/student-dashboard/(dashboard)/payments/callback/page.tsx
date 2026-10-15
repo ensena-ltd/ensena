@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CheckCircle2, XCircle } from "lucide-react";
 
 import { fulfilBookingPayment } from "@/lib/booking-payments-server";
+import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { requireRole } from "@/lib/supabase/require-role";
 
 export const metadata: Metadata = {
@@ -18,6 +20,12 @@ export default async function PaymentCallbackPage({ searchParams }: { searchPara
   const reference = params.reference ?? params.trxref ?? "";
   const result = profile && reference ? await fulfilBookingPayment(reference) : null;
   const success = result?.ok === true;
+
+  // A paid booking goes straight to its confirmation page.
+  if (profile && result?.ok) {
+    const { data: lesson } = await getServiceRoleClient().from("private_lessons").select("tutor_id").eq("booking_group_id", result.bookingGroupId).eq("student_id", profile.id).limit(1).maybeSingle();
+    if (lesson?.tutor_id) redirect(`/student-dashboard/tutors/${lesson.tutor_id}/book/confirmation?booking=${result.bookingGroupId}`);
+  }
 
   return (
     <div className="mx-auto mt-10 max-w-md rounded-3xl border border-ensena-border bg-ensena-surface p-8 text-center">

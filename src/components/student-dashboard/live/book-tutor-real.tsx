@@ -1,342 +1,544 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarDays, Check, Lock, Loader2, X } from "lucide-react";
-import { toast } from "sonner";
+import { BadgeCheck, Calendar, ChevronLeft, ChevronRight, Loader2, Lock, MessageCircle, ShieldCheck, Star, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { createPrivateBooking, getBookableSlots, startBookingCheckout } from "@/lib/actions/student-booking";
-import { MAX_WEEKS, MONTH_WEEKS, MONTHLY_SAVE_PCT, addDaysToISO, bookingPrices, dayOfWeekISO, sessionPrice, type BookingFrequency, type Slot } from "@/lib/booking-slots";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getAvailableDates, getCommonTimes } from "@/lib/actions/student-booking";
+import { MONTH_WEEKS, addDaysToISO, bookingPrices, dayOfWeekISO, sessionPrice, type BookingFrequency } from "@/lib/booking-slots";
 import { formatNaira } from "@/lib/format";
 import type { TutorPublicProfile } from "@/lib/tutor-directory-server";
 import { cn } from "@/lib/utils";
 
-import { formatLongDate, formatTime, platformISODate } from "./learning-utils";
+import { platformISODate } from "./learning-utils";
 import { PersonAvatar, useLiveNow } from "./live-shared";
+import { availabilityLabel, experienceLabel, responseLabel, teachingLevels, timeRange, tutorTitle, WEEKDAY_SHORT } from "./tutor-ui";
 
-const DAYS_SHOWN = 28;
-const FREQUENCIES: { key: BookingFrequency; label: string; hint: string }[] = [
-  { key: "oneTime", label: "One lesson", hint: "A single session" },
-  { key: "weekly", label: "Weekly", hint: "Same times every week" },
-  { key: "monthly", label: "Monthly plan", hint: `4 weeks · save ${MONTHLY_SAVE_PCT}%` },
+const FREQUENCIES: { key: BookingFrequency; label: string }[] = [
+  { key: "oneTime", label: "One time" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
 ];
+export const frequencyLabel: Record<BookingFrequency, string> = { oneTime: "One time", weekly: "Weekly", monthly: "Monthly" };
+// Monday-first chips, as on the design.
+const DAY_CHIPS = [1, 2, 3, 4, 5, 6, 0];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** Sessions in the booking: one, one week's worth (weekly), or four weeks' worth (monthly). */
+export function sessionCount(frequency: BookingFrequency, daysPerWeek: number): number {
+  return frequency === "oneTime" ? 1 : frequency === "weekly" ? daysPerWeek : daysPerWeek * MONTH_WEEKS;
+}
+
+export function sessionsLabel(frequency: BookingFrequency, daysPerWeek: number): string {
+  if (frequency === "oneTime") return "1 session";
+  const perWeek = `${daysPerWeek} session${daysPerWeek === 1 ? "" : "s"}/week`;
+  return frequency === "monthly" ? `${perWeek} · ${MONTH_WEEKS} weeks` : perWeek;
+}
+
+/** The first week's lesson dates: the start date plus each other chosen weekday in the 6 days after it. */
+export function firstWeekDates(startISO: string, days: number[], frequency: BookingFrequency): string[] {
+  if (frequency === "oneTime") return [startISO];
+  return Array.from({ length: 7 }, (_, i) => addDaysToISO(startISO, i)).filter((iso) => days.includes(dayOfWeekISO(iso)));
+}
 
 export function BookTutorReal({ tutor, generatedAtMs, studentSubjects }: { tutor: TutorPublicProfile; generatedAtMs: number; studentSubjects: string[] }) {
   const router = useRouter();
   const nowMs = useLiveNow(generatedAtMs);
   const todayISO = platformISODate(nowMs);
+  const firstName = tutor.name.split(" ")[0];
   const preferredSubject = tutor.subjects.find((s) => studentSubjects.some((w) => w.toLowerCase() === s.toLowerCase())) ?? tutor.subjects[0] ?? "";
+  const teachingDays = useMemo(() => [...new Set(tutor.weekly.map((r) => r.dayOfWeek))], [tutor.weekly]);
+  const maxDaysPerWeek = Math.max(1, Math.min(5, teachingDays.length));
+  const defaultDays = DAY_CHIPS.filter((d) => teachingDays.includes(d)).slice(0, Math.min(2, maxDaysPerWeek));
 
   const [subject, setSubject] = useState(preferredSubject);
   const [duration, setDuration] = useState(tutor.defaultDuration);
-  const [frequency, setFrequency] = useState<BookingFrequency>("oneTime");
-  const [weeks, setWeeks] = useState(4);
-  const [dateISO, setDateISO] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Slot[]>([]);
-  const [notes, setNotes] = useState("");
-  const [slotCache, setSlotCache] = useState<Record<string, Slot[] | "error">>({});
-  const [submitting, startSubmit] = useTransition();
-  const [step, setStep] = useState<"idle" | "booking" | "paying">("idle");
+  const [frequency, setFrequency] = useState<BookingFrequency>(teachingDays.length > 1 ? "weekly" : "oneTime");
+  const [daysPerWeek, setDaysPerWeek] = useState(Math.max(1, defaultDays.length));
+  const [selectedDays, setSelectedDays] = useState<number[]>(defaultDays);
+  const [startISO, setStartISO] = useState<string | null>(null);
+  const [time, setTime] = useState("");
+  const [viewMonth, setViewMonth] = useState(todayISO.slice(0, 7));
+  const [userNavigated, setUserNavigated] = useState(false);
+  const [dateCache, setDateCache] = useState<Record<string, string[] | "error">>({});
+  const [timeCache, setTimeCache] = useState<Record<string, string[] | "error">>({});
 
-  const teachingDays = useMemo(() => new Set(tutor.weekly.map((r) => r.dayOfWeek)), [tutor.weekly]);
-  const days = useMemo(() => Array.from({ length: DAYS_SHOWN }, (_, i) => addDaysToISO(todayISO, i)), [todayISO]);
-  const firstSelectedISO = selected.length ? platformISODate(selected[0].startMs) : null;
   const recurring = frequency !== "oneTime";
-  const weekWindowEnd = firstSelectedISO ? addDaysToISO(firstSelectedISO, 6) : null;
+  const days = recurring ? selectedDays : startISO ? [dayOfWeekISO(startISO)] : [];
+  const weekDates = startISO ? firstWeekDates(startISO, selectedDays, frequency) : [];
 
-  const cacheKey = dateISO ? `${dateISO}|${duration}` : null;
-  const slots = cacheKey ? slotCache[cacheKey] : undefined;
-
+  // Open dates for the month on screen.
+  const monthKey = `${viewMonth}|${duration}`;
+  const monthDates = dateCache[monthKey];
   useEffect(() => {
-    if (!dateISO || !cacheKey || slotCache[cacheKey] !== undefined) return;
+    if (monthDates !== undefined) return;
     let cancelled = false;
-    getBookableSlots({ tutorId: tutor.id, dateISO, durationMinutes: duration }).then((res) => {
-      if (!cancelled) setSlotCache((prev) => ({ ...prev, [cacheKey]: res.ok ? res.slots : "error" }));
+    const [y, m] = viewMonth.split("-").map(Number);
+    const from = `${viewMonth}-01` < todayISO ? todayISO : `${viewMonth}-01`;
+    const to = `${viewMonth}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
+    getAvailableDates({ tutorId: tutor.id, fromISO: from, toISO: to, durationMinutes: duration }).then((res) => {
+      if (cancelled) return;
+      setDateCache((prev) => ({ ...prev, [monthKey]: res.ok ? res.dates : "error" }));
+      // First visit: skip ahead to the next month with openings.
+      if (res.ok && res.dates.length === 0 && !userNavigated && viewMonth <= todayISO.slice(0, 7)) {
+        setViewMonth(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7));
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [dateISO, duration, cacheKey, slotCache, tutor.id]);
+  }, [monthKey, monthDates, viewMonth, duration, tutor.id, todayISO, userNavigated]);
 
-  const sessionCount = selected.length * (frequency === "oneTime" ? 1 : frequency === "monthly" ? MONTH_WEEKS : weeks);
-  const pricing = tutor.pricePerHour ? bookingPrices(tutor.pricePerHour, duration, frequency, sessionCount) : null;
-  const perSession = tutor.pricePerHour ? sessionPrice(tutor.pricePerHour, duration) : 0;
+  // Times free on every lesson day of the first week.
+  const timeKey = weekDates.length ? `${weekDates.join(",")}|${duration}` : null;
+  const timeOptions = timeKey ? timeCache[timeKey] : undefined;
+  useEffect(() => {
+    if (!timeKey || timeOptions !== undefined) return;
+    let cancelled = false;
+    getCommonTimes({ tutorId: tutor.id, dates: weekDates, durationMinutes: duration }).then((res) => {
+      if (!cancelled) setTimeCache((prev) => ({ ...prev, [timeKey]: res.ok ? res.times : "error" }));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // weekDates is derived from timeKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeKey, timeOptions, duration, tutor.id]);
+
+  // Keep the chosen time valid as the options change (derived-state reset during render).
+  const [prevOptionsKey, setPrevOptionsKey] = useState("");
+  const optionsKey = `${timeKey}|${Array.isArray(timeOptions) ? timeOptions.join(",") : String(timeOptions)}`;
+  if (optionsKey !== prevOptionsKey) {
+    setPrevOptionsKey(optionsKey);
+    if (Array.isArray(timeOptions) && !timeOptions.includes(time)) setTime(timeOptions[0] ?? "");
+  }
 
   function changeDuration(d: number) {
     setDuration(d);
-    setSelected([]);
+    setStartISO(null);
   }
 
   function changeFrequency(f: BookingFrequency) {
     setFrequency(f);
-    if (f === "oneTime" && selected.length > 1) setSelected(selected.slice(0, 1));
+    if (f !== "oneTime" && startISO && !selectedDays.includes(dayOfWeekISO(startISO))) setStartISO(null);
   }
 
-  function toggleSlot(slot: Slot) {
-    const isSelected = selected.some((s) => s.startMs === slot.startMs);
-    if (isSelected) {
-      setSelected(selected.filter((s) => s.startMs !== slot.startMs));
-      return;
-    }
-    if (!recurring) {
-      setSelected([slot]);
-      return;
-    }
-    const next = [...selected, slot].sort((a, b) => a.startMs - b.startMs);
-    if (next[next.length - 1].startMs - next[0].startMs >= 7 * 86_400_000) {
-      toast.error("For a weekly plan, pick your lesson times within one week. They'll repeat every week after that.");
-      return;
-    }
-    if (next.some((s, i) => i > 0 && s.startMs < next[i - 1].endMs)) {
-      toast.error("That time overlaps another lesson you picked.");
-      return;
-    }
-    setSelected(next);
+  function changeDaysPerWeek(n: number) {
+    setDaysPerWeek(n);
+    const next = selectedDays.slice(0, n);
+    setSelectedDays(next);
+    if (startISO && !next.includes(dayOfWeekISO(startISO))) setStartISO(null);
   }
 
-  function book() {
-    if (!subject || selected.length === 0) return;
-    startSubmit(async () => {
-      setStep("booking");
-      const created = await createPrivateBooking({
-        tutorId: tutor.id,
-        subject,
-        durationMinutes: duration,
-        frequency,
-        weeks,
-        startTimes: selected.map((s) => s.startMs),
-        notes,
-      });
-      if (!created.ok || !created.bookingGroupId) {
-        setStep("idle");
-        toast.error(created.message ?? "We couldn't create your booking.");
-        // Availability changed under us — refetch.
-        setSlotCache({});
-        setSelected([]);
-        return;
-      }
-      setStep("paying");
-      const checkout = await startBookingCheckout(created.bookingGroupId);
-      if (!checkout.ok || !checkout.url) {
-        setStep("idle");
-        toast.error(checkout.message ?? "We couldn't start the payment.", { duration: 8000 });
-        router.push("/student-dashboard/lessons?tab=Upcoming");
-        return;
-      }
-      window.location.assign(checkout.url);
+  function toggleDay(dow: number) {
+    if (!teachingDays.includes(dow)) return;
+    if (selectedDays.includes(dow)) {
+      setSelectedDays(selectedDays.filter((d) => d !== dow));
+      if (startISO && dayOfWeekISO(startISO) === dow) setStartISO(null);
+      return;
+    }
+    if (selectedDays.length >= daysPerWeek) return;
+    setSelectedDays([...selectedDays, dow]);
+  }
+
+  const count = sessionCount(frequency, recurring ? selectedDays.length : 1);
+  const perSession = tutor.pricePerHour ? sessionPrice(tutor.pricePerHour, duration) : 0;
+  const total = tutor.pricePerHour ? bookingPrices(tutor.pricePerHour, duration, frequency, count).total : 0;
+  const daysComplete = !recurring || selectedDays.length === daysPerWeek;
+  const canContinue = daysComplete && Boolean(startISO) && Boolean(time) && Boolean(subject);
+
+  function goToReview() {
+    if (!canContinue || !startISO) return;
+    const params = new URLSearchParams({
+      subject,
+      duration: String(duration),
+      frequency,
+      days: [...days].sort((a, b) => DAY_CHIPS.indexOf(a) - DAY_CHIPS.indexOf(b)).join(","),
+      start: startISO,
+      time,
     });
+    router.push(`/student-dashboard/tutors/${tutor.id}/book/review?${params}`);
   }
+
+  // Calendar grid for viewMonth.
+  const [vy, vm] = viewMonth.split("-").map(Number);
+  const firstDow = new Date(Date.UTC(vy, vm - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(vy, vm, 0)).getUTCDate();
+  const openDates = Array.isArray(monthDates) ? new Set(monthDates) : new Set<string>();
+  const shiftMonth = (delta: number) => {
+    setUserNavigated(true);
+    setViewMonth(new Date(Date.UTC(vy, vm - 1 + delta, 1)).toISOString().slice(0, 7));
+  };
+  const avail = availabilityLabel(tutor, nowMs);
+  const reviews = tutor.reviews.slice(0, 3);
 
   return (
     <div>
-      <Link href={`/student-dashboard/tutors/${tutor.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-ensena-muted hover:text-ensena-ink">
-        <ArrowLeft className="size-4" /> Back to {tutor.name.split(" ")[0]}&apos;s profile
+      <Link href={`/student-dashboard/tutors/${tutor.id}`} className="flex w-fit items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
+        <ChevronLeft className="size-4" /> Back to tutor profile
       </Link>
-      <h1 className="mt-3 font-heading text-2xl font-semibold text-ensena-ink">Book a lesson with {tutor.name}</h1>
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
-        <div className="flex min-w-0 flex-col gap-5">
-          {/* 1. Lesson details */}
-          <section className="rounded-2xl border border-ensena-border bg-ensena-surface p-5">
-            <h2 className="font-heading text-base font-semibold text-ensena-ink">1. Lesson details</h2>
-            <label className="mt-4 flex flex-col gap-1.5 text-sm">
-              <span className="text-xs font-medium text-ensena-muted">Subject</span>
-              <select value={subject} onChange={(e) => setSubject(e.target.value)} className="h-11 rounded-xl border border-ensena-border bg-ensena-surface px-3 text-sm text-ensena-ink">
-                {tutor.subjects.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </label>
-            <p className="mt-4 text-xs font-medium text-ensena-muted">Lesson length</p>
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {tutor.classDurations.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => changeDuration(d)}
-                  className={cn("rounded-full border px-4 py-2 text-sm font-medium", duration === d ? "border-ensena-primary bg-ensena-primary/5 text-ensena-primary" : "border-ensena-border text-ensena-ink hover:bg-ensena-bg-soft")}
-                >
-                  {d} min · {tutor.pricePerHour ? formatNaira(sessionPrice(tutor.pricePerHour, d)) : "—"}
-                </button>
+      <div className="mt-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-heading text-xl font-semibold text-ensena-ink lg:text-2xl">Book a session with {tutor.name}</h1>
+          <p className="text-sm text-ensena-muted">{tutorTitle(tutor)}</p>
+        </div>
+        <p className="flex items-center gap-1.5 text-sm text-ensena-ink">
+          <span className="flex items-center gap-1">
+            <Star className="size-3.5 fill-amber-400 text-amber-400" />
+            <span className="font-medium">{tutor.rating ?? "New"}</span>
+          </span>
+          <span className="text-ensena-muted">({tutor.reviewCount} reviews)</span>
+          <span className="flex items-center gap-1 rounded-full bg-ensena-success/10 px-2 py-0.5 text-xs font-semibold text-ensena-success">
+            <ShieldCheck className="size-3" /> Verified Teacher
+          </span>
+        </p>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.6fr_1fr] lg:gap-8">
+        <div className="flex flex-col gap-5">
+          {/* Tutor */}
+          <div className="flex flex-col gap-4 rounded-2xl border border-ensena-border bg-ensena-surface p-5 sm:flex-row lg:p-6">
+            <div className="relative h-40 w-full shrink-0 overflow-hidden rounded-xl bg-ensena-primary/5 sm:h-auto sm:min-h-40 sm:w-40">
+              <PersonAvatar name={tutor.name} image={tutor.image} className={cn("absolute inset-0 size-full rounded-none", !tutor.image && "text-5xl")} />
+              {avail.today && (
+                <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-[10px] font-semibold text-ensena-success">
+                  <span className="size-1.5 rounded-full bg-ensena-success" /> Available today
+                </span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-heading text-base font-semibold text-ensena-ink">About {firstName}</h2>
+              <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-sm text-ensena-muted">{tutor.bio || tutor.headline}</p>
+              <ul className="mt-3 flex flex-col gap-1.5 text-sm text-ensena-ink">
+                <li className="flex items-center gap-2">
+                  <Calendar className="size-3.5 shrink-0 text-ensena-primary" /> {experienceLabel(tutor.yearsExperience)}
+                </li>
+                <li className="flex items-center gap-2">
+                  <Users className="size-3.5 shrink-0 text-ensena-primary" /> {tutor.completedLessons}+ lessons taught
+                </li>
+                <li className="flex items-center gap-2">
+                  <BadgeCheck className="size-3.5 shrink-0 text-ensena-primary" /> Expert in {[...teachingLevels(tutor), ...tutor.exams].join(", ")}
+                </li>
+                <li className="flex items-center gap-2">
+                  <MessageCircle className="size-3.5 shrink-0 text-ensena-primary" /> {responseLabel(tutor.responseTime)}
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-ensena-border bg-ensena-surface p-5 lg:p-6">
+            <h2 className="font-heading text-base font-semibold text-ensena-ink">Subjects &amp; Exam Expertise</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[...tutor.subjects, ...teachingLevels(tutor), ...tutor.exams].filter((v, i, all) => all.indexOf(v) === i).map((tag) => (
+                <span key={tag} className="rounded-full bg-ensena-primary/10 px-3 py-1.5 text-sm font-medium text-ensena-primary">
+                  {tag}
+                </span>
               ))}
             </div>
-            <p className="mt-4 text-xs font-medium text-ensena-muted">How often</p>
-            <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {FREQUENCIES.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  onClick={() => changeFrequency(f.key)}
-                  className={cn("rounded-xl border p-3 text-left", frequency === f.key ? "border-ensena-primary bg-ensena-primary/5" : "border-ensena-border hover:bg-ensena-bg-soft")}
-                >
-                  <span className={cn("block text-sm font-semibold", frequency === f.key ? "text-ensena-primary" : "text-ensena-ink")}>{f.label}</span>
-                  <span className="block text-xs text-ensena-muted">{f.hint}</span>
-                </button>
-              ))}
-            </div>
-            {frequency === "weekly" && (
-              <label className="mt-3 flex items-center gap-2 text-sm text-ensena-ink">
-                For
-                <select value={weeks} onChange={(e) => setWeeks(Number(e.target.value))} className="h-9 rounded-lg border border-ensena-border bg-ensena-surface px-2 text-sm">
-                  {Array.from({ length: MAX_WEEKS }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                {weeks === 1 ? "week" : "weeks"}
-              </label>
-            )}
-          </section>
+          </div>
 
-          {/* 2. Time */}
-          <section className="rounded-2xl border border-ensena-border bg-ensena-surface p-5">
-            <h2 className="font-heading text-base font-semibold text-ensena-ink">2. Pick {recurring ? "your lesson times for the first week" : "a time"}</h2>
-            <p className="mt-0.5 text-xs text-ensena-muted">
-              {recurring ? "Pick one or more times within a week. Each repeats weekly. " : ""}All times are West Africa Time (Lagos).
-            </p>
-            {teachingDays.size === 0 ? (
-              <p className="mt-4 rounded-xl bg-ensena-bg-soft p-4 text-sm text-ensena-muted">{tutor.name.split(" ")[0]} hasn&apos;t set any teaching hours yet.</p>
+          <div className="rounded-2xl border border-ensena-border bg-ensena-surface p-5 lg:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="font-heading text-base font-semibold text-ensena-ink">What students say</h2>
+              <Link href={`/student-dashboard/tutors/${tutor.id}#reviews`} className="text-sm font-semibold text-ensena-primary hover:underline">
+                View all reviews
+              </Link>
+            </div>
+            {reviews.length === 0 ? (
+              <p className="mt-3 text-sm text-ensena-muted">No reviews yet. Be one of the first students to learn with {firstName}.</p>
             ) : (
               <>
-                <div className="mt-4 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]">
-                  {days.map((iso) => {
-                    const teaches = teachingDays.has(dayOfWeekISO(iso));
-                    const outsideWeek = recurring && weekWindowEnd !== null && firstSelectedISO !== null && (iso < firstSelectedISO || iso > weekWindowEnd);
-                    const disabled = !teaches || outsideWeek;
-                    const ms = Date.parse(`${iso}T12:00:00Z`);
-                    const picked = selected.filter((s) => platformISODate(s.startMs) === iso).length;
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  {reviews.map((review) => (
+                    <div key={review.id} className="rounded-xl border border-ensena-border p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-semibold text-ensena-ink">{review.reviewerName}</p>
+                        <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-ensena-ink">
+                          <Star className="size-3.5 fill-amber-400 text-amber-400" /> {review.rating.toFixed(1)}
+                        </span>
+                      </div>
+                      <p className="mt-2 line-clamp-4 text-xs text-ensena-muted">{review.comment || "No comment."}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex items-center justify-center gap-1.5">
+                  {reviews.map((r, i) => (
+                    <span key={r.id} className={i === 0 ? "size-1.5 rounded-full bg-ensena-primary" : "size-1.5 rounded-full bg-ensena-border"} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-start gap-3 rounded-2xl bg-ensena-primary/5 p-4">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-ensena-primary" />
+            <div>
+              <p className="text-sm font-semibold text-ensena-ink">Your payment is protected</p>
+              <p className="mt-0.5 text-xs text-ensena-muted">Payment is held in escrow and released to the tutor only after your session.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Customize your session */}
+        <aside className="h-fit lg:sticky lg:top-6">
+          <div className="rounded-2xl border border-ensena-border bg-ensena-surface p-5 shadow-sm lg:p-6">
+            <h2 className="font-heading text-base font-semibold text-ensena-ink lg:text-lg">Customize your session</h2>
+
+            {tutor.subjects.length > 1 && (
+              <div className="mt-5">
+                <p className="text-sm font-semibold text-ensena-ink">Subject</p>
+                <p className="text-xs text-ensena-muted">What would you like to learn?</p>
+                <Select value={subject} onValueChange={(v) => v && setSubject(v)}>
+                  <SelectTrigger className="mt-2 h-11 w-full rounded-xl border-ensena-border px-3 text-sm font-medium text-ensena-ink">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tutor.subjects.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-ensena-ink">Duration</p>
+              <p className="text-xs text-ensena-muted">Length of each session</p>
+              <div className={cn("mt-2 grid gap-2", tutor.classDurations.length > 3 ? "grid-cols-4" : "grid-cols-3")}>
+                {tutor.classDurations.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => changeDuration(d)}
+                    className={cn("rounded-xl border px-2 py-2.5 text-center text-sm font-medium", duration === d ? "border-ensena-primary bg-ensena-primary/5 text-ensena-primary" : "border-ensena-border text-ensena-ink hover:bg-ensena-bg-soft")}
+                  >
+                    {d} min
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-ensena-ink">Frequency</p>
+              <p className="text-xs text-ensena-muted">How often do you want lessons?</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {FREQUENCIES.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => changeFrequency(f.key)}
+                    className={cn("rounded-xl border px-2 py-2.5 text-center text-sm font-medium", frequency === f.key ? "border-ensena-primary bg-ensena-primary/5 text-ensena-primary" : "border-ensena-border text-ensena-ink hover:bg-ensena-bg-soft")}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {recurring && (
+              <div className="mt-5">
+                <p className="text-sm font-semibold text-ensena-ink">How many days per week?</p>
+                <p className="text-xs text-ensena-muted">Choose exactly this many days below</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {Array.from({ length: maxDaysPerWeek }, (_, i) => i + 1).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => changeDaysPerWeek(n)}
+                      className={cn("flex size-9 items-center justify-center rounded-lg border text-xs font-medium", daysPerWeek === n ? "border-ensena-primary bg-ensena-primary/5 text-ensena-primary" : "border-ensena-border text-ensena-ink hover:bg-ensena-bg-soft")}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="mt-4 text-sm font-semibold text-ensena-ink">Select days</p>
+                <p className="text-xs text-ensena-muted">
+                  {selectedDays.length} of {daysPerWeek} days selected
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {DAY_CHIPS.map((dow) => {
+                    const disabled = !teachingDays.includes(dow);
+                    const isSelected = selectedDays.includes(dow);
+                    const capReached = !isSelected && selectedDays.length >= daysPerWeek;
                     return (
                       <button
-                        key={iso}
+                        key={dow}
                         type="button"
-                        disabled={disabled}
-                        onClick={() => setDateISO(iso)}
+                        disabled={disabled || capReached}
+                        onClick={() => toggleDay(dow)}
+                        title={disabled ? `${firstName} doesn't teach on this day` : undefined}
                         className={cn(
-                          "relative flex w-16 shrink-0 flex-col items-center rounded-xl border py-2 text-xs",
-                          dateISO === iso ? "border-ensena-primary bg-ensena-primary text-white" : "border-ensena-border text-ensena-ink hover:bg-ensena-bg-soft",
-                          disabled && "cursor-not-allowed opacity-35 hover:bg-transparent"
+                          "flex h-9 min-w-11 flex-col items-center justify-center rounded-lg border px-2 text-xs leading-tight font-medium",
+                          disabled
+                            ? "cursor-not-allowed border-ensena-border text-ensena-border"
+                            : isSelected
+                              ? "border-ensena-primary bg-ensena-primary/5 text-ensena-primary"
+                              : capReached
+                                ? "cursor-not-allowed border-ensena-border text-ensena-muted"
+                                : "border-ensena-border text-ensena-ink hover:bg-ensena-bg-soft"
                         )}
                       >
-                        <span className="font-medium">{new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(ms)}</span>
-                        <span className="text-base font-semibold">{iso.slice(8)}</span>
-                        <span className={dateISO === iso ? "text-white/80" : "text-ensena-muted"}>{new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(ms)}</span>
-                        {picked > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">{picked}</span>}
+                        {WEEKDAY_SHORT[dow]}
+                        {disabled && <span className="text-[8px] leading-none">Unavailable</span>}
                       </button>
                     );
                   })}
                 </div>
-                <div className="mt-3 min-h-16">
-                  {!dateISO ? (
-                    <p className="flex items-center gap-2 text-sm text-ensena-muted">
-                      <CalendarDays className="size-4" /> Choose a day to see open times.
-                    </p>
-                  ) : slots === undefined ? (
-                    <p className="flex items-center gap-2 text-sm text-ensena-muted">
-                      <Loader2 className="size-4 animate-spin" /> Checking {tutor.name.split(" ")[0]}&apos;s calendar…
-                    </p>
-                  ) : slots === "error" ? (
-                    <p className="text-sm text-rose-600">We couldn&apos;t load times for this day. Please try again.</p>
-                  ) : slots.length === 0 ? (
-                    <p className="text-sm text-ensena-muted">No open {duration}-minute slots on {formatLongDate(Date.parse(`${dateISO}T12:00:00Z`))}. Try another day.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {slots.map((s) => {
-                        const isSel = selected.some((x) => x.startMs === s.startMs);
-                        return (
-                          <button
-                            key={s.startMs}
-                            type="button"
-                            onClick={() => toggleSlot(s)}
-                            className={cn("flex items-center gap-1 rounded-full border px-3.5 py-2 text-sm font-medium", isSel ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-ensena-border text-ensena-ink hover:border-ensena-primary/50")}
-                          >
-                            {isSel && <Check className="size-3.5" />}
-                            {formatTime(s.startMs)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </>
+              </div>
             )}
-          </section>
 
-          {/* 3. Notes */}
-          <section className="rounded-2xl border border-ensena-border bg-ensena-surface p-5">
-            <h2 className="font-heading text-base font-semibold text-ensena-ink">3. Anything your tutor should know? (optional)</h2>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              maxLength={1000}
-              placeholder="Topics you'd like to cover, upcoming exams, how you learn best…"
-              className="mt-3 w-full rounded-xl border border-ensena-border p-3 text-sm text-ensena-ink outline-none focus:border-ensena-primary/50"
-            />
-          </section>
-        </div>
-
-        <aside>
-          <section className="rounded-2xl border border-ensena-border bg-ensena-surface p-5 lg:sticky lg:top-6">
-            <div className="flex items-center gap-3">
-              <PersonAvatar name={tutor.name} image={tutor.image} className="size-11" />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ensena-ink">{tutor.name}</p>
-                <p className="truncate text-xs text-ensena-muted">{subject}</p>
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-ensena-ink">Start date</p>
+              <p className="text-xs text-ensena-muted">{recurring ? "When should your first session happen?" : "When should this session happen?"}</p>
+              <div className="mt-2 rounded-xl border border-ensena-border p-3">
+                <div className="flex items-center justify-between">
+                  <button type="button" aria-label="Previous month" disabled={viewMonth <= todayISO.slice(0, 7)} onClick={() => shiftMonth(-1)} className="flex size-8 items-center justify-center rounded-full border border-ensena-border disabled:opacity-30">
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-ensena-ink">
+                    {MONTHS[vm - 1]} {vy}
+                    {monthDates === undefined && <Loader2 className="size-3.5 animate-spin text-ensena-muted" />}
+                  </p>
+                  <button type="button" aria-label="Next month" onClick={() => shiftMonth(1)} className="flex size-8 items-center justify-center rounded-full border border-ensena-border">
+                    <ChevronRight className="size-4" />
+                  </button>
+                </div>
+                <div className="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-ensena-muted">
+                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                    <span key={d}>{d}</span>
+                  ))}
+                </div>
+                <div className="mt-1 grid grid-cols-7 gap-1">
+                  {Array.from({ length: firstDow }, (_, i) => (
+                    <span key={`blank-${i}`} />
+                  ))}
+                  {Array.from({ length: daysInMonth }, (_, i) => {
+                    const iso = `${viewMonth}-${String(i + 1).padStart(2, "0")}`;
+                    const weekdayOk = !recurring || selectedDays.includes(dayOfWeekISO(iso));
+                    const clickable = openDates.has(iso) && weekdayOk;
+                    const isSelected = startISO === iso;
+                    return (
+                      <button
+                        key={iso}
+                        type="button"
+                        disabled={!clickable}
+                        onClick={() => setStartISO(iso)}
+                        className={cn(
+                          "relative flex aspect-square items-center justify-center rounded-lg text-sm",
+                          isSelected ? "bg-ensena-primary text-white" : clickable ? "text-ensena-ink hover:bg-ensena-bg-soft" : "cursor-not-allowed text-ensena-border"
+                        )}
+                      >
+                        {i + 1}
+                        {iso === todayISO && !isSelected && <span className="absolute bottom-0.5 size-1 rounded-full bg-ensena-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {monthDates === "error" && <p className="mt-2 text-center text-xs text-rose-600">We couldn&apos;t load {firstName}&apos;s calendar. Please refresh.</p>}
+                {Array.isArray(monthDates) && monthDates.length === 0 && <p className="mt-2 text-center text-xs text-ensena-muted">No open {duration}-minute slots this month.</p>}
               </div>
             </div>
-            <div className="mt-4 flex flex-col gap-2 border-t border-ensena-border pt-4 text-sm">
-              {selected.length === 0 ? (
-                <p className="text-ensena-muted">No time picked yet.</p>
-              ) : (
-                <ul className="flex flex-col gap-1.5">
-                  {selected.map((s) => (
-                    <li key={s.startMs} className="flex items-center justify-between gap-2">
-                      <span className="text-ensena-ink">
-                        {formatLongDate(s.startMs)} · {formatTime(s.startMs)}
-                      </span>
-                      <button type="button" aria-label="Remove" onClick={() => toggleSlot(s)} className="text-ensena-muted hover:text-rose-600">
-                        <X className="size-3.5" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {recurring && selected.length > 0 && (
-                <p className="text-xs text-ensena-muted">
-                  Repeats weekly for {frequency === "monthly" ? MONTH_WEEKS : weeks} {(frequency === "monthly" ? MONTH_WEEKS : weeks) === 1 ? "week" : "weeks"}.
-                </p>
-              )}
+
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-ensena-ink">Preferred time</p>
+              <p className="text-xs text-ensena-muted">{recurring && weekDates.length > 1 ? "Free on every day you picked" : "Your preferred time"}</p>
+              <Select value={time} onValueChange={(v) => v && setTime(v)} disabled={!Array.isArray(timeOptions) || timeOptions.length === 0}>
+                <SelectTrigger className="mt-2 h-11 w-full rounded-xl border-ensena-border px-3 text-sm font-medium text-ensena-ink">
+                  <SelectValue>
+                    {() =>
+                      !startISO
+                        ? "Pick a start date first"
+                        : timeOptions === undefined
+                          ? "Checking times…"
+                          : timeOptions === "error"
+                            ? "Couldn't load times"
+                            : timeOptions.length === 0
+                              ? "No shared time — try other days"
+                              : timeRange(time, duration)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.isArray(timeOptions) &&
+                    timeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {timeRange(t, duration)}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
-            {pricing && sessionCount > 0 && (
-              <div className="mt-4 flex flex-col gap-1.5 border-t border-ensena-border pt-4 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-ensena-muted">
-                    {sessionCount} × {duration} min @ {formatNaira(perSession)}
-                  </span>
-                  <span className="text-ensena-ink">{formatNaira(perSession * sessionCount)}</span>
+
+            <div className="mt-5 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-ensena-ink">Number of sessions</p>
+                <p className="text-xs text-ensena-muted">{recurring ? "Based on the days you selected" : "A single session"}</p>
+              </div>
+              <span className="text-right font-semibold text-ensena-ink">{sessionsLabel(frequency, recurring ? selectedDays.length : 1)}</span>
+            </div>
+
+            <div className="mt-6 rounded-xl bg-ensena-bg-soft p-4">
+              <h3 className="text-sm font-semibold text-ensena-ink">Booking summary</h3>
+              <dl className="mt-2 flex flex-col gap-1.5 text-sm">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ensena-muted">Subject</dt>
+                  <dd className="text-right font-medium text-ensena-ink">{subject}</dd>
                 </div>
-                {frequency === "monthly" && (
-                  <div className="flex justify-between text-emerald-700">
-                    <span>Monthly plan discount</span>
-                    <span>−{formatNaira(perSession * sessionCount - pricing.total)}</span>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ensena-muted">Duration</dt>
+                  <dd className="font-medium text-ensena-ink">{duration} min</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ensena-muted">Frequency</dt>
+                  <dd className="font-medium text-ensena-ink">{frequencyLabel[frequency]}</dd>
+                </div>
+                {recurring && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-ensena-muted">Days</dt>
+                    <dd className="text-right font-medium text-ensena-ink">{selectedDays.length ? DAY_CHIPS.filter((d) => selectedDays.includes(d)).map((d) => WEEKDAY_SHORT[d]).join(", ") : "Not selected"}</dd>
                   </div>
                 )}
-                <div className="flex justify-between border-t border-ensena-border pt-2 font-semibold text-ensena-ink">
-                  <span>Total</span>
-                  <span>{formatNaira(pricing.total)}</span>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ensena-muted">Sessions</dt>
+                  <dd className="text-right font-medium text-ensena-ink">{sessionsLabel(frequency, recurring ? selectedDays.length : 1)}</dd>
                 </div>
+              </dl>
+              <div className="mt-3 flex items-center justify-between border-t border-ensena-border pt-3">
+                <span className="text-sm font-semibold text-ensena-ink">Total amount</span>
+                <span className="text-lg font-semibold text-ensena-primary">{formatNaira(total)}</span>
               </div>
-            )}
-            <Button onClick={book} loading={submitting} disabled={selected.length === 0 || !subject} className="mt-4 h-11 w-full rounded-full bg-ensena-primary text-sm font-semibold text-white">
-              {step === "booking" ? "Reserving your time…" : step === "paying" ? "Opening Paystack…" : pricing && sessionCount > 0 ? `Pay ${formatNaira(pricing.total)}` : "Continue to payment"}
+              <p className="mt-1 text-xs text-ensena-muted">
+                {formatNaira(perSession)} per session{frequency === "monthly" ? " · monthly plan discount applied" : ""}
+              </p>
+            </div>
+
+            <Button
+              disabled={!canContinue}
+              onClick={goToReview}
+              className="mt-4 h-11 w-full rounded-full bg-ensena-primary text-sm font-semibold text-white transition-transform hover:-translate-y-0.5 hover:bg-ensena-primary-hover disabled:pointer-events-none disabled:opacity-50 disabled:hover:translate-y-0"
+            >
+              Continue to Payment →
             </Button>
-            <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-xs text-ensena-muted">
-              <Lock className="size-3.5" /> Secure payment with Paystack. Your time is held for 30 minutes while you pay.
+            {!canContinue && (
+              <p className="mt-2 text-center text-xs font-medium text-rose-600">
+                {!daysComplete
+                  ? `Select ${daysPerWeek - selectedDays.length} more day${daysPerWeek - selectedDays.length === 1 ? "" : "s"} to continue.`
+                  : !startISO
+                    ? "Select a start date to continue."
+                    : "Select a preferred time to continue."}
+              </p>
+            )}
+            <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-ensena-muted">
+              <Lock className="size-3.5" /> You won&apos;t be charged yet
             </p>
-          </section>
+          </div>
         </aside>
       </div>
     </div>

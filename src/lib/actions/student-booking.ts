@@ -22,6 +22,7 @@ import { getPlatformTodayParts } from "@/lib/platform-time";
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { loadBusyIntervals, loadTutorProfile, loadTutorWeekly } from "@/lib/tutor-directory-server";
+import { recordBookingPaid } from "@/lib/booking-payments-server";
 import { requestOrigin } from "@/lib/site-url-server";
 
 // Booking, paying for and rescheduling a real tutor's private lessons.
@@ -283,4 +284,81 @@ export async function reschedulePrivateLesson(lessonId: string, newStartMs: numb
   ]);
   revalidatePath("/student-dashboard", "layout");
   return { ok: true };
+}
+
+// ── Booking page helpers ───────────────────────────────────────────────
+
+const lagosHHMM = (ms: number) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ms);
+
+/** Dates between fromISO and toISO (inclusive, max 62 days) with at least one open slot. */
+export async function getAvailableDates(input: { tutorId: string; fromISO: string; toISO: string; durationMinutes: number }): Promise<{ ok: boolean; dates: string[] }> {
+  const student = await currentStudent();
+  if (!student || !UUID.test(input.tutorId)) return { ok: false, dates: [] };
+  const from = parseISODate(input.fromISO);
+  const to = parseISODate(input.toISO);
+  if (!from || !to) return { ok: false, dates: [] };
+  const fromMs = Date.UTC(from.year, from.month - 1, from.day) - 3_600_000;
+  const toMs = Math.min(Date.UTC(to.year, to.month - 1, to.day) + DAY_MS, fromMs + 62 * DAY_MS, Date.now() + MAX_ADVANCE_DAYS * DAY_MS);
+  if (toMs <= fromMs) return { ok: true, dates: [] };
+  const [weekly, busy] = await Promise.all([loadTutorWeekly(input.tutorId), loadBusyIntervals(input.tutorId, student.id, fromMs, toMs)]);
+  const nowMs = Date.now();
+  const dates: string[] = [];
+  for (let ms = fromMs + 3_600_000; ms < toMs; ms += DAY_MS) {
+    const iso = new Date(ms).toISOString().slice(0, 10);
+    if (availableSlots({ dateISO: iso, durationMinutes: input.durationMinutes, weekly, busy, nowMs }).length > 0) dates.push(iso);
+  }
+  return { ok: true, dates };
+}
+
+/**
+ * Start times ("HH:MM", West Africa Time) open on EVERY one of `dates` —
+ * the first week of a booking, so one preferred time works for each lesson.
+ */
+export async function getCommonTimes(input: { tutorId: string; dates: string[]; durationMinutes: number }): Promise<{ ok: boolean; times: string[] }> {
+  const student = await currentStudent();
+  const dates = [...new Set(input.dates)].filter((d) => parseISODate(d)).sort();
+  if (!student || !UUID.test(input.tutorId) || dates.length === 0 || dates.length > 7) return { ok: false, times: [] };
+  const first = parseISODate(dates[0])!;
+  const last = parseISODate(dates[dates.length - 1])!;
+  const fromMs = Date.UTC(first.year, first.month - 1, first.day) - 3_600_000;
+  const toMs = Date.UTC(last.year, last.month - 1, last.day) + DAY_MS;
+  const [weekly, busy] = await Promise.all([loadTutorWeekly(input.tutorId), loadBusyIntervals(input.tutorId, student.id, fromMs, toMs)]);
+  const nowMs = Date.now();
+  const perDay = dates.map((iso) => new Set(availableSlots({ dateISO: iso, durationMinutes: input.durationMinutes, weekly, busy, nowMs }).map((s) => lagosHHMM(s.startMs))));
+  const common = [...perDay[0]].filter((t) => perDay.every((day) => day.has(t)));
+  return { ok: true, times: common.sort() };
+}
+
+/**
+ * The review page's "Pay" button: creates the booking (re-checking every
+ * lesson time on the server) and pays for it. With Paystack configured the
+ * student is sent to Paystack; without it the payment is a recorded TEST
+ * payment so the whole flow can be used before payments go live.
+ */
+export async function bookAndPay(input: CreateBookingInput & { paymentPlan: "oneTime" | "recurring" }): Promise<BookingActionResult & { redirectUrl?: string }> {
+  const created = await createPrivateBooking(input);
+  if (!created.ok || !created.bookingGroupId) return { ok: false, message: created.message };
+  const confirmation = `/student-dashboard/tutors/${input.tutorId}/book/confirmation?booking=${created.bookingGroupId}`;
+
+  if (isPaystackConfigured()) {
+    const checkout = await startBookingCheckout(created.bookingGroupId);
+    return checkout.ok && checkout.url ? { ok: true, redirectUrl: checkout.url } : { ok: false, message: checkout.message };
+  }
+
+  const student = await currentStudent();
+  if (!student) return { ok: false, message: "Please sign in again." };
+  const { data } = await getServiceRoleClient().from("private_lessons").select("price").eq("booking_group_id", created.bookingGroupId).eq("student_id", student.id);
+  const amount = ((data ?? []) as { price: number }[]).reduce((sum, l) => sum + Number(l.price), 0);
+  const paid = await recordBookingPaid({
+    bookingGroupId: created.bookingGroupId,
+    studentId: student.id,
+    amountPaid: amount,
+    paidAt: new Date().toISOString(),
+    provider: "test",
+    reference: `TEST-${created.bookingGroupId.slice(0, 8).toUpperCase()}`,
+    mode: input.frequency === "oneTime" ? "oneTime" : input.paymentPlan,
+  });
+  if (!paid.ok) return { ok: false, message: paid.message };
+  revalidatePath("/student-dashboard", "layout");
+  return { ok: true, redirectUrl: confirmation };
 }

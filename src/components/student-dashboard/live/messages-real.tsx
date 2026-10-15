@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Archive, ArchiveRestore, ArrowLeft, Download, FileText, Loader2, MessageSquare, MoreVertical, Paperclip, Pin, PinOff, Search, Send, Smile, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -563,7 +563,9 @@ function ChatPanel({
 }
 
 function Composer({ conversationId, onSend }: { conversationId: string; onSend: (body: string, files: PendingFile[]) => Promise<boolean> }) {
-  const [draft, setDraft] = useState("");
+  // ?draft= pre-fills the box (a request started from a tutor profile).
+  const initialDraft = useSearchParams().get("draft") ?? "";
+  const [draft, setDraft] = useState(initialDraft.slice(0, 1000));
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [sending, setSending] = useState(false);

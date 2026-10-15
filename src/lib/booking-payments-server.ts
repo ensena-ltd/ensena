@@ -1,8 +1,8 @@
-// Server-only: turning a verified Paystack payment into a paid booking.
-// Called from both the checkout callback page and the Paystack webhook —
-// whichever arrives first does the work; the other finds nothing left to
-// do. The "unpaid → paid" flip is a single conditional UPDATE, so even two
-// simultaneous calls can never both record the payment.
+// Server-only: turning a payment into a paid booking.
+// fulfilBookingPayment is called from both the checkout callback page and the
+// Paystack webhook — whichever arrives first does the work; the other finds
+// nothing left to do. The "unpaid → paid" flip is a single conditional
+// UPDATE, so even two simultaneous calls can never both record the payment.
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { verifyTransaction } from "@/lib/paystack";
 
@@ -27,6 +27,35 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
   }
 
   const admin = getServiceRoleClient();
+  const { data: lessons } = await admin.from("private_lessons").select("price").eq("booking_group_id", bookingGroupId).eq("student_id", studentId);
+  const rows = (lessons ?? []) as { price: number }[];
+  if (rows.length === 0) return { ok: false, reason: "unknown-booking", message: "We couldn't find the booking for this payment." };
+
+  const expected = rows.reduce((sum, l) => sum + Number(l.price), 0);
+  if (tx.currency !== "NGN" || tx.amount < Math.round(expected * 100)) {
+    console.error("Paystack amount mismatch", { reference, paid: tx.amount, expected });
+    return { ok: false, reason: "amount-mismatch", bookingGroupId, message: "The amount paid doesn't match this booking. Our team has been alerted." };
+  }
+
+  return recordBookingPaid({ bookingGroupId, studentId, amountPaid: tx.amount / 100, paidAt: tx.paid_at ?? new Date().toISOString(), provider: "paystack", reference, mode: "oneTime" });
+}
+
+/**
+ * Marks every still-unpaid lesson in a booking group as paid and confirmed,
+ * and records the payment plan, ledger entry, booking events and
+ * notifications. Shared by Paystack fulfilment and the test checkout.
+ */
+export async function recordBookingPaid(input: {
+  bookingGroupId: string;
+  studentId: string;
+  amountPaid: number;
+  paidAt: string;
+  provider: "paystack" | "test";
+  reference: string;
+  mode: "oneTime" | "recurring";
+}): Promise<FulfilResult> {
+  const { bookingGroupId, studentId, amountPaid, paidAt, provider, reference } = input;
+  const admin = getServiceRoleClient();
   const { data: lessons } = await admin
     .from("private_lessons")
     .select("id, tutor_id, subject, price, scheduled_at, payment_status, status")
@@ -36,13 +65,6 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
   const rows = (lessons ?? []) as { id: string; tutor_id: string; subject: string; price: number; scheduled_at: string; payment_status: string; status: string }[];
   if (rows.length === 0) return { ok: false, reason: "unknown-booking", message: "We couldn't find the booking for this payment." };
 
-  const expected = rows.reduce((sum, l) => sum + Number(l.price), 0);
-  if (tx.currency !== "NGN" || tx.amount < Math.round(expected * 100)) {
-    console.error("Paystack amount mismatch", { reference, paid: tx.amount, expected });
-    return { ok: false, reason: "amount-mismatch", bookingGroupId, message: "The amount paid doesn't match this booking. Our team has been alerted." };
-  }
-
-  const paidAt = tx.paid_at ?? new Date().toISOString();
   // The atomic claim: only rows still unpaid get flipped.
   const { data: claimed, error } = await admin
     .from("private_lessons")
@@ -59,7 +81,6 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
   await admin.from("private_lessons").update({ status: "Upcoming" }).in("id", claimedIds).eq("status", "Pending");
 
   const first = rows[0];
-  const amountPaid = tx.amount / 100;
   const [{ data: tutor }, { data: student }] = await Promise.all([
     admin.from("profiles").select("full_name").eq("id", first.tutor_id).maybeSingle(),
     admin.from("profiles").select("full_name").eq("id", studentId).maybeSingle(),
@@ -68,6 +89,7 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
   const studentName = student?.full_name?.trim() || "A student";
   const when = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Lagos", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(first.scheduled_at));
   const sessionsLabel = rows.length === 1 ? "lesson" : `${rows.length} lessons`;
+  const providerLabel = provider === "paystack" ? `Paystack ${reference}` : `Test payment ${reference}`;
 
   await Promise.all([
     admin.from("payment_plans").insert({
@@ -77,20 +99,20 @@ export async function fulfilBookingPayment(reference: string): Promise<FulfilRes
       scope: rows.length === 1 ? "session" : "full",
       covers_session_ids: claimedIds,
       amount: amountPaid,
-      mode: "oneTime",
+      mode: input.mode,
       status: "paid",
       paid_at: paidAt,
     }),
     admin.from("wallet_transactions").insert({
       user_id: studentId,
-      description: `${first.subject} with ${tutorName} (${sessionsLabel}) · Paystack ${reference}`,
+      description: `${first.subject} with ${tutorName} (${sessionsLabel}) · ${providerLabel}`,
       type: "payment",
       amount: amountPaid,
       direction: "debit",
       status: "completed",
       occurred_at: paidAt,
     }),
-    admin.from("booking_events").insert(claimedIds.map((id) => ({ private_lesson_id: id, event_type: "paid", actor_id: studentId, metadata: { provider: "paystack", reference } }))),
+    admin.from("booking_events").insert(claimedIds.map((id) => ({ private_lesson_id: id, event_type: "paid", actor_id: studentId, metadata: { provider, reference } }))),
     admin.from("notifications").insert([
       {
         user_id: first.tutor_id,

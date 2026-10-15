@@ -24,6 +24,21 @@ export interface TutorDirectoryEntry {
   yearsExperience: string;
   teachingModes: string[];
   memberSince: string;
+  /** Completed private lessons on Ensena. */
+  lessonsTaught: number;
+  /** Days of the week (0 = Sunday) the tutor takes bookings; empty on vacation. */
+  teachingDays: number[];
+  /** Teaches after 5 PM on at least one day. */
+  teachesEvenings: boolean;
+  onVacation: boolean;
+  /** Seen in the last 10 minutes (only when the tutor shares last-active). */
+  online: boolean;
+  /** One of the first 50 tutors approved on Ensena. */
+  founding: boolean;
+  discoveryEnabled: boolean;
+  discoveryPrice: number | null;
+  qualification: string;
+  responseTime: string;
 }
 
 export interface TutorPublicReview {
@@ -54,14 +69,58 @@ export interface TutorPublicProfile extends TutorDirectoryEntry {
   acceptsNewMessages: boolean;
   /** The tutor's preferred lesson length — preselected on the booking page. */
   defaultDuration: number;
+  studentsTaught: number;
+  /** Share of students with 2+ completed lessons, or null before any. */
+  repeatStudentsPct: number | null;
+  /** Share of this tutor's paid lessons the tutor cancelled, or null before any. */
+  cancellationRatePct: number | null;
+  ratingBreakdown: Record<1 | 2 | 3 | 4 | 5, number>;
+  trust: { identityVerified: boolean; backgroundChecked: boolean; profileComplete: boolean; reliable: boolean; overallVerified: boolean };
+  teachingFormats: string[];
+  sessionTypes: string[];
+  groupClasses: { id: string; slug: string; title: string; subject: string; level: string; price: number; seatsFilled: number; seatsTotal: number; startDate: string | null }[];
 }
 
-type Person = { id: string; full_name: string | null; avatar_url: string | null; created_at: string };
+type Person = { id: string; full_name: string | null; avatar_url: string | null; created_at: string; last_seen_at?: string | null };
+
+const FOUNDING_LIMIT = 50;
+const ONLINE_WINDOW_MS = 10 * 60_000;
+
+type TutorFlags = { vacation_mode?: boolean | null; show_last_active?: boolean | null };
+
+interface EntryExtras {
+  lessonsTaught: number;
+  weekly: WeeklyRange[];
+  founding: boolean;
+}
+
+function weeklyFromApplication(app: Record<string, unknown> | null): WeeklyRange[] {
+  const availability = app?.availability && typeof app.availability === "object" ? (app.availability as Record<string, { enabled?: boolean; ranges?: { start?: string; end?: string }[] }>) : {};
+  return Object.entries(availability).flatMap(([day, d]) => {
+    const dayOfWeek = DAY_INDEX[day.toLowerCase()];
+    if (dayOfWeek === undefined || !d?.enabled) return [];
+    return (d.ranges ?? []).filter((r) => r.start && r.end).map((r) => ({ dayOfWeek, start: r.start!, end: r.end! }));
+  });
+}
+
+// The first FOUNDING_LIMIT tutors to join (by account creation) among those approved.
+async function foundingTutorIds(): Promise<Set<string>> {
+  const admin = getServiceRoleClient();
+  const { data: approved } = await admin.from("tutor_profiles").select("id").eq("application_status", "approved");
+  const ids = ((approved ?? []) as { id: string }[]).map((t) => t.id);
+  if (ids.length === 0) return new Set();
+  const { data } = await admin.from("profiles").select("id, created_at").in("id", ids).order("created_at").limit(FOUNDING_LIMIT);
+  return new Set(((data ?? []) as { id: string }[]).map((p) => p.id));
+}
 
 const DAY_INDEX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
 
-function toEntry(id: string, person: Person | undefined, app: TutorApplicationFields, ratings: number[]): TutorDirectoryEntry {
+function toEntry(id: string, person: Person | undefined, app: TutorApplicationFields, ratings: number[], flags: TutorFlags, extras: EntryExtras): TutorDirectoryEntry {
   const price = Number(app.oneOnOnePrice);
+  const trial = Number(app.trialPrice);
+  const onVacation = flags.vacation_mode === true;
+  const weekly = onVacation ? [] : extras.weekly;
+  const lastSeenMs = person?.last_seen_at ? new Date(person.last_seen_at).getTime() : 0;
   return {
     id,
     name: person?.full_name?.trim() || "Tutor",
@@ -79,6 +138,16 @@ function toEntry(id: string, person: Person | undefined, app: TutorApplicationFi
     yearsExperience: app.yearsExperience,
     teachingModes: app.teachingModes,
     memberSince: person?.created_at ?? "",
+    lessonsTaught: extras.lessonsTaught,
+    teachingDays: [...new Set(weekly.map((r) => r.dayOfWeek))].sort(),
+    teachesEvenings: weekly.some((r) => r.end > "17:00"),
+    onVacation,
+    online: flags.show_last_active !== false && lastSeenMs > Date.now() - ONLINE_WINDOW_MS,
+    founding: extras.founding,
+    discoveryEnabled: app.discoverySession,
+    discoveryPrice: app.discoverySession && Number.isFinite(trial) && trial > 0 ? trial : null,
+    qualification: app.highestQualification,
+    responseTime: app.responseTime,
   };
 }
 
@@ -100,14 +169,38 @@ export async function listApprovedTutors(): Promise<TutorDirectoryEntry[]> {
     const admin = getServiceRoleClient();
     // A tutor who switched off Public Profile is hidden from browsing, but
     // students they already teach can still open their profile directly.
-    const { data: tutorRows } = await admin.from("tutor_profiles").select("id, application_data").eq("application_status", "approved").eq("profile_public", true);
-    const tutors = (tutorRows ?? []) as { id: string; application_data: Record<string, unknown> | null }[];
+    const { data: tutorRows } = await admin
+      .from("tutor_profiles")
+      .select("id, application_data, vacation_mode, show_last_active")
+      .eq("application_status", "approved")
+      .eq("profile_public", true);
+    const tutors = (tutorRows ?? []) as ({ id: string; application_data: Record<string, unknown> | null } & TutorFlags)[];
     if (tutors.length === 0) return [];
     const ids = tutors.map((t) => t.id);
-    const [{ data: people }, ratings] = await Promise.all([admin.from("profiles").select("id, full_name, avatar_url, created_at").in("id", ids), publishedRatings(ids)]);
+    const [{ data: people }, ratings, { data: weeklyRows }, { data: completedRows }, founding] = await Promise.all([
+      admin.from("profiles").select("id, full_name, avatar_url, created_at, last_seen_at").in("id", ids),
+      publishedRatings(ids),
+      admin.from("tutor_weekly_availability").select("tutor_id, day_of_week, enabled, start_time, end_time").in("tutor_id", ids),
+      admin.from("private_lessons").select("tutor_id").in("tutor_id", ids).eq("status", "Completed"),
+      foundingTutorIds(),
+    ]);
     const byId = new Map(((people ?? []) as Person[]).map((p) => [p.id, p]));
+    const savedHours = (weeklyRows ?? []) as { tutor_id: string; day_of_week: number; enabled: boolean; start_time: string; end_time: string }[];
+    const lessonCounts = new Map<string, number>();
+    for (const l of (completedRows ?? []) as { tutor_id: string }[]) lessonCounts.set(l.tutor_id, (lessonCounts.get(l.tutor_id) ?? 0) + 1);
     return tutors
-      .map((t) => toEntry(t.id, byId.get(t.id), parseTutorApplication(t.application_data), ratings.get(t.id) ?? []))
+      .map((t) => {
+        // Hours saved in the dashboard win over the ones given at sign-up (same rule as loadTutorRegularHours).
+        const own = savedHours.filter((r) => r.tutor_id === t.id);
+        const weekly = own.length
+          ? own.filter((r) => r.enabled).map((r) => ({ dayOfWeek: r.day_of_week, start: r.start_time.slice(0, 5), end: r.end_time.slice(0, 5) }))
+          : weeklyFromApplication(t.application_data);
+        return toEntry(t.id, byId.get(t.id), parseTutorApplication(t.application_data), ratings.get(t.id) ?? [], t, {
+          lessonsTaught: lessonCounts.get(t.id) ?? 0,
+          weekly,
+          founding: founding.has(t.id),
+        });
+      })
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || b.reviewCount - a.reviewCount || a.name.localeCompare(b.name));
   } catch (error) {
     console.error("listApprovedTutors failed", error);
@@ -145,12 +238,7 @@ export async function loadTutorRegularHours(tutorId: string, applicationData?: R
     const { data } = await admin.from("tutor_profiles").select("application_data").eq("id", tutorId).maybeSingle();
     app = (data?.application_data as Record<string, unknown> | null) ?? null;
   }
-  const availability = app?.availability && typeof app.availability === "object" ? (app.availability as Record<string, { enabled?: boolean; ranges?: { start?: string; end?: string }[] }>) : {};
-  return Object.entries(availability).flatMap(([day, d]) => {
-    const dayOfWeek = DAY_INDEX[day.toLowerCase()];
-    if (dayOfWeek === undefined || !d?.enabled) return [];
-    return (d.ranges ?? []).filter((r) => r.start && r.end).map((r) => ({ dayOfWeek, start: r.start!, end: r.end! }));
-  });
+  return weeklyFromApplication(app ?? null);
 }
 
 // `opts.preview`: the tutor viewing their own profile — shown even before
@@ -168,7 +256,7 @@ export async function loadTutorProfile(tutorId: string, opts: { preview?: boolea
     const appData = (tutor.application_data as Record<string, unknown> | null) ?? null;
     const app = parseTutorApplication(appData);
 
-    const [{ data: person }, { data: reviewRows }, weekly, { count: completedLessons }, { data: settings }] = await Promise.all([
+    const [{ data: person }, { data: reviewRows }, weekly, { data: lessonRows }, { data: settings }, founding, { data: docRows }, { data: classRows }] = await Promise.all([
       admin.from("profiles").select("id, full_name, avatar_url, created_at, last_seen_at").eq("id", tutorId).maybeSingle(),
       admin
         .from("reviews")
@@ -178,9 +266,35 @@ export async function loadTutorProfile(tutorId: string, opts: { preview?: boolea
         .eq("status", "published")
         .order("created_at", { ascending: false }),
       loadTutorRegularHours(tutorId, appData),
-      admin.from("private_lessons").select("id", { count: "exact", head: true }).eq("tutor_id", tutorId).eq("status", "Completed"),
+      admin.from("private_lessons").select("id, student_id, status").eq("tutor_id", tutorId).neq("payment_status", "unpaid"),
       admin.from("account_settings").select("default_lesson_duration").eq("user_id", tutorId).maybeSingle(),
+      foundingTutorIds(),
+      admin.from("tutor_verification_documents").select("doc_type, status").eq("tutor_id", tutorId),
+      admin.from("group_classes").select("id, slug, title, subject, academic_level, class_grade").eq("tutor_id", tutorId).eq("status", "Published"),
     ]);
+    const lessons = (lessonRows ?? []) as { id: string; student_id: string; status: string }[];
+    const completed = lessons.filter((l) => l.status === "Completed");
+    const completedLessons = completed.length;
+    const perStudent = new Map<string, number>();
+    for (const l of completed) perStudent.set(l.student_id, (perStudent.get(l.student_id) ?? 0) + 1);
+    const studentsTaught = perStudent.size;
+    const repeatStudentsPct = studentsTaught ? Math.round(([...perStudent.values()].filter((n) => n >= 2).length / studentsTaught) * 100) : null;
+    const { count: tutorCancellations } = lessons.length
+      ? await admin.from("cancellations").select("id", { count: "exact", head: true }).eq("cancelled_by", tutorId).in("private_lesson_id", lessons.map((l) => l.id))
+      : { count: 0 };
+    const cancellationRatePct = lessons.length ? Math.round(((tutorCancellations ?? 0) / lessons.length) * 100) : null;
+
+    const classes = (classRows ?? []) as { id: string; slug: string; title: string; subject: string; academic_level: string | null; class_grade: string | null }[];
+    const { data: cohortRows } = classes.length
+      ? await admin
+          .from("group_class_cohorts")
+          .select("group_class_id, start_date, seats_total, seats_filled, price, status")
+          .in("group_class_id", classes.map((c) => c.id))
+          .neq("status", "Cancelled")
+          .neq("status", "Completed")
+          .order("start_date")
+      : { data: [] };
+    const cohorts = (cohortRows ?? []) as { group_class_id: string; start_date: string; seats_total: number; seats_filled: number; price: number | string }[];
     const reviews = (reviewRows ?? []) as { id: string; rating: number; comment: string | null; created_at: string; reviewer_id: string; tutor_reply: string | null }[];
     const { data: reviewers } = reviews.length
       ? await admin.from("profiles").select("id, full_name").in("id", [...new Set(reviews.map((r) => r.reviewer_id))])
@@ -192,11 +306,16 @@ export async function loadTutorProfile(tutorId: string, opts: { preview?: boolea
       return first ? `${first}${rest.length ? ` ${rest[rest.length - 1][0]}.` : ""}` : "Student";
     };
 
+    const docs = (docRows ?? []) as { doc_type: string; status: string }[];
+    const approved = tutor.application_status === "approved";
+    const ratingBreakdown: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const r of reviews) if (r.rating >= 1 && r.rating <= 5) ratingBreakdown[r.rating as 1 | 2 | 3 | 4 | 5]++;
+
     const durations = app.classDurations.map((d) => parseInt(d, 10)).filter((n) => Number.isFinite(n) && n >= 15 && n <= 240);
     const classDurations = durations.length ? [...new Set(durations)].sort((a, b) => a - b) : [30, 45, 60, 90];
     const preferred = Number(settings?.default_lesson_duration);
     return {
-      ...toEntry(tutorId, (person as Person | null) ?? undefined, app, reviews.map((r) => r.rating)),
+      ...toEntry(tutorId, (person as Person | null) ?? undefined, app, reviews.map((r) => r.rating), tutor, { lessonsTaught: completedLessons, weekly, founding: founding.has(tutorId) }),
       levelExpertise: app.levelExpertise,
       teachingStyles: app.teachingStyles,
       qualification: app.highestQualification,
@@ -206,7 +325,34 @@ export async function loadTutorProfile(tutorId: string, opts: { preview?: boolea
       classDurations,
       weekly,
       reviews: reviews.map((r) => ({ id: r.id, rating: r.rating, comment: r.comment ?? "", createdAt: r.created_at, reviewerName: shortName(r.reviewer_id), tutorReply: r.tutor_reply })),
-      completedLessons: completedLessons ?? 0,
+      completedLessons,
+      studentsTaught,
+      repeatStudentsPct,
+      cancellationRatePct,
+      ratingBreakdown,
+      trust: {
+        identityVerified: approved && docs.some((d) => /id|passport|licen|nin/i.test(d.doc_type) && d.status === "approved"),
+        backgroundChecked: approved,
+        profileComplete: Boolean(app.bio && app.headline && app.subjects.length && Number(app.oneOnOnePrice) > 0 && weekly.length && (person as Person | null)?.avatar_url),
+        reliable: cancellationRatePct === null || cancellationRatePct <= 5,
+        overallVerified: approved,
+      },
+      teachingFormats: app.teachingFormats,
+      sessionTypes: app.sessionTypes,
+      groupClasses: classes.map((c) => {
+        const cohort = cohorts.find((k) => k.group_class_id === c.id);
+        return {
+          id: c.id,
+          slug: c.slug,
+          title: c.title,
+          subject: c.subject,
+          level: c.class_grade || c.academic_level || "",
+          price: cohort ? Number(cohort.price) : 0,
+          seatsFilled: cohort?.seats_filled ?? 0,
+          seatsTotal: cohort?.seats_total ?? 0,
+          startDate: cohort?.start_date ?? null,
+        };
+      }),
       onVacation: tutor.vacation_mode === true,
       lastActiveAt: tutor.show_last_active !== false ? ((person as { last_seen_at?: string | null } | null)?.last_seen_at ?? null) : null,
       acceptsNewMessages: tutor.allow_new_student_messages !== false,
