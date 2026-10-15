@@ -1,0 +1,1 @@
+create index offer_negotiation_history_actor_id_idx on public.offer_negotiation_history (actor_id);
