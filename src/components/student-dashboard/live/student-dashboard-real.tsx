@@ -53,6 +53,7 @@ import { cn } from "@/lib/utils";
 
 import { formatShortDate, formatTime, greeting, isUpcoming, kindLabel, monthDay, needsPayment, platformISODate, relativeDay, tasksDueOn } from "./learning-utils";
 import { PersonAvatar, useLiveNow, useStudyTasks } from "./live-shared";
+import { useLiveNotifications } from "./notifications-live";
 import { useReportIssue } from "./report-issue";
 import { computeProgress } from "./progress-utils";
 
@@ -118,6 +119,11 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
   const [dismissedMilestone, setDismissedMilestone] = useState<string | null>(null);
   const accountMenuItems = buildStudentAccountMenuItems(data.hasCounselling);
   const firstName = me.firstName;
+  // The layout's shared live list when present, so the bell stays in sync
+  // with the mobile bell and the Notifications page.
+  const live = useLiveNotifications();
+  const bellNotifications = live ? live.notifications.slice(0, 5) : data.notifications;
+  const unreadNotifications = live ? live.unreadCount : data.unreadNotifications;
 
   useEffect(() => {
     try {
@@ -193,9 +199,9 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
               className="relative flex size-9 items-center justify-center rounded-full text-ensena-ink hover:bg-ensena-bg-soft"
             >
               <Bell className="size-5" />
-              {data.unreadNotifications > 0 && (
+              {unreadNotifications > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 flex size-4.5 items-center justify-center rounded-full bg-ensena-primary text-[10px] font-semibold text-white">
-                  {data.unreadNotifications > 9 ? "9+" : data.unreadNotifications}
+                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
                 </span>
               )}
             </button>
@@ -207,13 +213,24 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
                     View all
                   </Link>
                 </div>
-                {data.notifications.length === 0 ? (
+                {bellNotifications.length === 0 ? (
                   <p className="px-2.5 py-4 text-center text-xs text-ensena-muted">You&apos;re all caught up.</p>
                 ) : (
                   <ul className="flex max-h-80 flex-col gap-0.5 overflow-y-auto">
-                    {data.notifications.map((n) => (
+                    {bellNotifications.map((n) => (
                       <li key={n.id}>
-                        <Link href={n.actionUrl ?? "/student-dashboard/notifications"} onClick={() => setNotifOpen(false)} className="block rounded-xl px-2.5 py-2 text-xs hover:bg-ensena-bg-soft">
+                        <Link
+                          href={n.actionUrl ?? "/student-dashboard/notifications"}
+                          onClick={(e) => {
+                            setNotifOpen(false);
+                            if (live) {
+                              // Marks it read everywhere, then navigates.
+                              e.preventDefault();
+                              live.open(n);
+                            }
+                          }}
+                          className="block rounded-xl px-2.5 py-2 text-xs hover:bg-ensena-bg-soft"
+                        >
                           <p className={cn("font-medium", n.unread ? "text-ensena-ink" : "text-ensena-muted")}>{n.text}</p>
                           <p className="mt-0.5 text-ensena-muted">{timeAgo(n.createdAtMs, nowMs)}</p>
                         </Link>

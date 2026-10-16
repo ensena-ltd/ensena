@@ -7,6 +7,9 @@ import { StudentBottomNav } from "@/components/student-dashboard/student-bottom-
 import { StudentIdentityProvider, type StudentIdentityRow } from "@/components/student-dashboard/student-identity";
 import { StudentMobileTopbar } from "@/components/student-dashboard/student-mobile-topbar";
 import { StudentSidebar } from "@/components/student-dashboard/student-sidebar";
+import { StudentNotificationsProvider } from "@/components/student-dashboard/live/notifications-live";
+import { loadStudentNotifications, type StudentNotificationRow } from "@/lib/student-notifications-server";
+import { loadStudentStanding } from "@/lib/student-profile-server";
 import { accountIdForName } from "@/lib/account-status-store";
 import { dashboardStudent } from "@/lib/student-dashboard-data";
 import { requireRole } from "@/lib/supabase/require-role";
@@ -22,9 +25,10 @@ export default async function StudentDashboardLayout({ children }: { children: R
 
   let identity: StudentIdentityRow | null = null;
   let accountTheme: ThemePreference | null = null;
+  let notifications: StudentNotificationRow[] | null = null;
   if (profile) {
     const supabase = await getSupabaseServerClient();
-    const [{ data: contact }, { data: student }, { data: guardian }, settings, { data: inbox }] = await Promise.all([
+    const [{ data: contact }, { data: student }, { data: guardian }, settings, { data: inbox }, notificationRows, standing, { count: counsellingCount }] = await Promise.all([
       supabase.from("profiles").select("phone, date_of_birth").eq("id", profile.id).maybeSingle(),
       // "*" so newer columns (bio, support_types, learning_goals) are picked
       // up when present without breaking before the migration has run.
@@ -32,7 +36,11 @@ export default async function StudentDashboardLayout({ children }: { children: R
       supabase.from("student_guardians").select("full_name, relationship, email, phone, consent_status").eq("student_id", profile.id).maybeSingle(),
       getAccountSettings(profile.id),
       supabase.from("conversation_participants").select("unread_count").eq("user_id", profile.id).eq("archived", false),
+      loadStudentNotifications(profile.id),
+      loadStudentStanding(profile.id),
+      supabase.from("counselling_appointments").select("id", { count: "exact", head: true }).eq("student_id", profile.id),
     ]);
+    notifications = notificationRows;
     accountTheme = settings.saved ? settings.theme : null;
     identity = {
       id: profile.id,
@@ -60,13 +68,15 @@ export default async function StudentDashboardLayout({ children }: { children: R
           }
         : null,
       unreadMessages: ((inbox ?? []) as { unread_count: number }[]).reduce((n, r) => n + (r.unread_count ?? 0), 0),
+      tier: standing.premium ? "Premium Student" : standing.founding ? "Founding Student" : "Student",
+      hasCounselling: (counsellingCount ?? 0) > 0,
     };
   }
 
   const studentAccountId = accountIdForName("student", identity?.fullName ?? dashboardStudent.name);
 
-  return (
-    <StudentIdentityProvider row={identity}>
+  const page = (
+    <>
       <ThemeSync accountTheme={accountTheme} />
       <div className="flex min-h-screen flex-col bg-ensena-bg-soft lg:flex-row">
         <StudentSidebar />
@@ -81,6 +91,13 @@ export default async function StudentDashboardLayout({ children }: { children: R
         </main>
         <StudentBottomNav />
       </div>
+    </>
+  );
+
+  return (
+    <StudentIdentityProvider row={identity}>
+      {/* Live notifications only for a signed-in student; demo mode keeps its own store. */}
+      {notifications ? <StudentNotificationsProvider initial={notifications}>{page}</StudentNotificationsProvider> : page}
     </StudentIdentityProvider>
   );
 }

@@ -39,6 +39,8 @@ export interface StudentIdentity {
   supportTypes: string[];
   learningGoals: string[];
   tier: string;
+  /** Live: has booked counselling. null in demo mode (the demo store decides). */
+  hasCounselling: boolean | null;
   /** Parent/guardian for "My child" sign-ups (student_guardians). */
   guardian: StudentGuardian | null;
   /** Real unread message count (conversation_participants); null in demo mode. */
@@ -63,6 +65,10 @@ export interface StudentIdentityRow {
   learningGoals: string[] | null;
   guardian: StudentGuardian | null;
   unreadMessages?: number;
+  /** "Premium Student" / "Founding Student" / "Student" (loadStudentStanding). */
+  tier?: string;
+  /** Has booked counselling at least once (shows Counselling in the account menu). */
+  hasCounselling?: boolean;
 }
 
 const demoIdentity: StudentIdentity = {
@@ -84,6 +90,7 @@ const demoIdentity: StudentIdentity = {
   supportTypes: studentProfileDetail.supportPreferences,
   learningGoals: studentProfileDetail.learningGoals,
   tier: dashboardStudent.tier,
+  hasCounselling: null,
   guardian: null,
   unreadMessages: null,
 };
@@ -109,7 +116,8 @@ function toIdentity(row: StudentIdentityRow): StudentIdentity {
     supportTypes: row.supportTypes ?? [],
     // Fall back to the single onboarding goal until learning_goals exists/is filled.
     learningGoals: row.learningGoals?.length ? row.learningGoals : (row.goal ?? "").split("\n").filter(Boolean),
-    tier: "Student",
+    tier: row.tier ?? "Student",
+    hasCounselling: row.hasCounselling ?? false,
     guardian: row.guardian,
     unreadMessages: row.unreadMessages ?? 0,
   };

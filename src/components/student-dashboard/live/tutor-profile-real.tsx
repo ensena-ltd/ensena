@@ -67,7 +67,7 @@ const formatLabels: Record<string, string> = { Private: "Private lessons", Group
 // Monday-first, as on the design.
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-function useSave(tutorId: string, initial: boolean, disabled = false) {
+export function useSave(tutorId: string, initial: boolean, disabled = false) {
   const [saved, setSaved] = useState(initial);
   const [pending, startTransition] = useTransition();
   function toggle() {

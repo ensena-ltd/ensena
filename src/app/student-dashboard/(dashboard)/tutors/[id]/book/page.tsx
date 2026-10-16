@@ -20,6 +20,10 @@ export default async function BookTutorPage({ params }: { params: Promise<{ id: 
   const tutor = await loadTutorProfile(id);
   if (!tutor) notFound();
   if (!tutor.pricePerHour || tutor.onVacation) redirect(`/student-dashboard/tutors/${id}`);
-  const { data: student } = await getServiceRoleClient().from("student_profiles").select("subjects").eq("id", profile.id).maybeSingle();
-  return <BookTutorReal tutor={tutor} generatedAtMs={getPlatformNowMs()} studentSubjects={(student?.subjects as string[] | null) ?? []} />;
+  const admin = getServiceRoleClient();
+  const [{ data: student }, { data: saved }] = await Promise.all([
+    admin.from("student_profiles").select("subjects").eq("id", profile.id).maybeSingle(),
+    admin.from("saved_tutors").select("tutor_id").eq("student_id", profile.id).eq("tutor_id", id).maybeSingle(),
+  ]);
+  return <BookTutorReal tutor={tutor} generatedAtMs={getPlatformNowMs()} studentSubjects={(student?.subjects as string[] | null) ?? []} initiallySaved={!!saved} />;
 }

@@ -7,6 +7,7 @@ import { ChevronLeft, Clock, Info, Lock, PlayCircle, ShieldCheck, Star, Tag, Use
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/logo";
 import { NeedHelpCard } from "@/components/booking/need-help-card";
 import { PaymentMethodSelector, type PaymentMethod } from "@/components/booking/payment-method-selector";
 import { PrivatePaymentPlanSelector, type PrivatePaymentPlan } from "@/components/booking/payment-plan-selector";
@@ -105,8 +106,19 @@ export function ReviewBookingReal({
   );
 
   return (
-    <div>
-      <Link href={editHref} className="flex w-fit items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
+    <div className="pb-36 lg:pb-0">
+      {/* Mobile checkout header, pinned just under the dashboard's top bar. */}
+      <header className="sticky top-[61px] z-30 -mx-4 -mt-4 flex h-16 items-center justify-between border-b border-ensena-border bg-ensena-surface px-4 sm:-mx-6 sm:-mt-6 lg:hidden">
+        <Link href={editHref} aria-label="Back to booking" className="flex size-9 items-center justify-center rounded-full text-ensena-ink hover:bg-ensena-bg-soft">
+          <ChevronLeft className="size-6" />
+        </Link>
+        <Logo size={26} />
+        <span className="flex items-center gap-1 text-xs font-medium text-ensena-muted">
+          <ShieldCheck className="size-3.5" /> Secure checkout
+        </span>
+      </header>
+
+      <Link href={editHref} className="hidden w-fit items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline lg:flex">
         <ChevronLeft className="size-4" /> Back
       </Link>
 
@@ -240,13 +252,13 @@ export function ReviewBookingReal({
           <PaymentProtectedBanner />
 
           {testMode && (
-            <p className="rounded-xl bg-indigo-50 px-4 py-3 text-xs text-indigo-800">
+            <p className="hidden rounded-xl bg-indigo-50 px-4 py-3 text-xs text-indigo-800 lg:block">
               Test mode: online payments aren&apos;t switched on yet, so no money is taken. Your booking is created and confirmed as if it were paid.
             </p>
           )}
           {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p>}
 
-          <div className="flex flex-col-reverse items-stretch justify-between gap-4 sm:flex-row sm:items-center">
+          <div className="hidden items-center justify-between gap-4 lg:flex">
             <p className="flex flex-wrap items-center gap-1.5 text-xs text-ensena-muted">
               <Lock className="size-3.5" /> By continuing, you agree to Ensena&apos;s{" "}
               <a href="/terms" target="_blank" className="text-ensena-primary hover:underline">
@@ -296,6 +308,24 @@ export function ReviewBookingReal({
           <WhatHappensNext title="What happens next?" steps={whatsNextSteps} />
           <NeedHelpCard role="Student" context="booking" />
         </aside>
+      </div>
+
+      {/* Mobile sticky Pay bar — just above the dashboard's bottom tab bar. */}
+      <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 border-t border-ensena-border bg-ensena-surface/95 px-4 py-3 backdrop-blur-md lg:hidden">
+        <Button onClick={pay} loading={submitting} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-ensena-primary text-sm font-semibold text-white disabled:pointer-events-none disabled:opacity-60">
+          {!submitting && <Lock className="size-4" />} {submitting ? "Processing…" : `Pay ${formatNaira(total)}`}
+        </Button>
+        <p className="mt-2 text-center text-[11px] text-ensena-muted">
+          By continuing, you agree to Ensena&apos;s{" "}
+          <a href="/terms" target="_blank" className="text-ensena-primary hover:underline">
+            Terms of Service
+          </a>{" "}
+          and{" "}
+          <a href="/refund-policy" target="_blank" className="text-ensena-primary hover:underline">
+            Cancellation Policy
+          </a>
+          .
+        </p>
       </div>
     </div>
   );

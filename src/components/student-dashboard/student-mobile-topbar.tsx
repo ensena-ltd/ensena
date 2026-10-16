@@ -11,8 +11,26 @@ import { SignOutLink } from "@/components/auth/sign-out-link";
 import { useStudentNotifications } from "@/hooks/use-student-notifications";
 import { useStudentIdentity } from "@/components/student-dashboard/student-identity";
 import { hasCounsellingRecords } from "@/lib/admin-counselling-data";
-import { buildStudentAccountMenuItems, dashboardStudent, notificationCategoryHref } from "@/lib/student-dashboard-data";
+import { NotificationsDropdown, useLiveNotifications } from "@/components/student-dashboard/live/notifications-live";
+import { dashboardStudent, notificationCategoryHref, studentProfileMenuItems } from "@/lib/student-dashboard-data";
 import { cn } from "@/lib/utils";
+
+// The mobile avatar menu, in the mobile design's order. Counselling only
+// once the student has booked it.
+function mobileAccountMenuItems(showCounselling: boolean) {
+  const byLabel = (label: string) => studentProfileMenuItems.find((i) => i.label === label);
+  return [
+    byLabel("Promotions & Offers"),
+    showCounselling ? { label: "Counselling", href: "/student-dashboard/counselling" } : undefined,
+    byLabel("My Profile"),
+    byLabel("Payment Methods"),
+    byLabel("Payment History"),
+    byLabel("Account Settings"),
+    byLabel("Notifications"),
+    byLabel("Security"),
+    { label: "Contact Support", href: "/student-dashboard/help" },
+  ].filter((i): i is { label: string; href: string } => !!i);
+}
 
 // Mobile-only (lg:hidden) top bar. The five primary sections live in
 // StudentBottomNav instead — this bar deliberately does not repeat them,
@@ -22,9 +40,10 @@ export function StudentMobileTopbar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const me = useStudentIdentity();
+  const live = useLiveNotifications();
   const { notifications: studentNotifications } = useStudentNotifications();
-  const unreadCount = studentNotifications.filter((n) => n.unread).length;
-  const accountMenuItems = buildStudentAccountMenuItems(hasCounsellingRecords(dashboardStudent.name));
+  const unreadCount = live ? live.unreadCount : studentNotifications.filter((n) => n.unread).length;
+  const accountMenuItems = mobileAccountMenuItems(me.hasCounselling ?? hasCounsellingRecords(dashboardStudent.name));
 
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-ensena-border bg-white px-4 py-3 lg:hidden">
@@ -44,11 +63,12 @@ export function StudentMobileTopbar() {
             <Bell className="size-4" />
             {unreadCount > 0 && (
               <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-ensena-primary text-[9px] font-semibold text-white">
-                {unreadCount}
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
           </button>
-          {notifOpen && (
+          {notifOpen && live && <NotificationsDropdown live={live} onClose={() => setNotifOpen(false)} />}
+          {notifOpen && !live && (
             <div className="absolute right-0 top-11 z-30 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-ensena-border bg-white p-2 shadow-lg">
               <div className="flex items-center justify-between px-2.5 py-1.5">
                 <p className="text-xs font-semibold text-ensena-ink">Notifications</p>
@@ -90,25 +110,25 @@ export function StudentMobileTopbar() {
             <Image src={me.image} alt={me.name} fill sizes="36px" className="object-cover" />
           </button>
           {profileOpen && (
-            <div className="absolute right-0 top-11 z-30 w-56 rounded-2xl border border-ensena-border bg-white p-1.5 shadow-lg">
-              <div className="px-2.5 py-2">
-                <p className="text-xs font-semibold text-ensena-ink">{me.name}</p>
-                <p className="text-[11px] text-ensena-muted">{me.tier}</p>
+            <div className="absolute right-0 top-12 z-30 w-[min(19rem,calc(100vw-2rem))] rounded-2xl border border-ensena-border bg-white p-2 shadow-lg">
+              <div className="px-3 py-2">
+                <p className="truncate text-sm font-semibold text-ensena-ink">{me.name}</p>
+                <p className="text-xs text-ensena-muted">{me.tier}</p>
               </div>
-              <div className="border-t border-ensena-border pt-1">
+              <div className="border-t border-ensena-border pt-1.5">
                 {accountMenuItems.map((item) => (
                   <Link
                     key={item.label}
                     href={item.href}
                     onClick={() => setProfileOpen(false)}
-                    className="block rounded-xl px-2.5 py-2 text-left text-xs font-medium text-ensena-ink hover:bg-ensena-bg-soft"
+                    className="block rounded-xl px-3 py-2 text-left text-sm font-medium text-ensena-ink hover:bg-ensena-bg-soft"
                   >
                     {item.label}
                   </Link>
                 ))}
                 <SignOutLink
                   onBeforeNavigate={() => setProfileOpen(false)}
-                  className="mt-1 block w-full rounded-xl border-t border-ensena-border px-2.5 pt-2.5 pb-2 text-left text-xs font-medium text-rose-600 hover:bg-rose-50"
+                  className="mt-1.5 block w-full rounded-xl border-t border-ensena-border px-3 pt-3 pb-2 text-left text-sm font-medium text-ensena-primary hover:bg-rose-50"
                 >
                   Logout
                 </SignOutLink>
