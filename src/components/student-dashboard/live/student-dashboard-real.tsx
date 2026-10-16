@@ -608,7 +608,7 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
       </div>
 
       {todayTasks.length > 0 && (
-        <div className="mt-6 rounded-2xl border border-ensena-border bg-ensena-surface p-5">
+        <div className="mt-6 hidden rounded-2xl border border-ensena-border bg-ensena-surface p-5 lg:block">
           <div className="flex items-center justify-between">
             <h2 className="font-heading text-base font-semibold text-ensena-ink">Today&apos;s Study Plan</h2>
             <Link href={PLANNER_HREF} className="text-xs font-semibold text-ensena-primary hover:underline">Open Planner →</Link>
@@ -635,13 +635,50 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
         </div>
       )}
 
-      {/* Mobile only, between the study plan and recommendations (the
-          mobile design's order). Desktop is unchanged. */}
+      <RecommendedTutors tutors={data.recommendedTutors} savedIds={data.savedTutorIds} basis={[me.level, me.course].filter(Boolean).join(" · ")} subjects={me.subjects} />
+
+      {/* Mobile only: Today's Study Plan + Counselling sit right before Quick
+          Actions (the mobile design's order). Desktop keeps the study plan
+          above Recommended for You, unchanged. */}
       <div className="lg:hidden">
+        <div className="mt-6 rounded-2xl border border-ensena-border bg-ensena-surface p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="font-heading text-base font-semibold text-ensena-ink">Today&apos;s Study Plan</h2>
+            <Link href={PLANNER_HREF} className="text-xs font-semibold text-ensena-primary hover:underline">Open Planner →</Link>
+          </div>
+          {todayTasks.length === 0 ? (
+            <>
+              <p className="mt-1 text-sm text-ensena-muted">Nothing planned for today yet.</p>
+              <Link href={PLANNER_HREF} className="mt-4 flex items-center gap-2.5 rounded-xl bg-rose-50 px-3.5 py-3 text-xs font-medium text-rose-700">
+                <TrendingUp className="size-4 shrink-0 text-rose-500" /> Add a study task to plan your day.
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-ensena-muted">{todayDone} of {todayTasks.length} tasks completed</p>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ensena-bg-soft">
+                <div className="h-full rounded-full bg-gradient-to-r from-rose-500 to-ensena-primary transition-all" style={{ width: `${todayPct}%` }} />
+              </div>
+              <ul className="mt-4 flex flex-col gap-3">
+                {todayTasks.map((task) => (
+                  <li key={task.id}>
+                    <button type="button" disabled={task.id.startsWith("temp-")} onClick={() => toggle(task.id)} className="flex w-full items-center gap-2.5 text-left">
+                      {task.done ? <CheckCircle2 className="size-4.5 shrink-0 fill-rose-100 text-rose-600" /> : <Circle className="size-4.5 shrink-0 text-ensena-muted" />}
+                      <span className={cn("min-w-0 flex-1 truncate text-sm", task.done ? "text-ensena-muted line-through" : "text-ensena-ink")}>{task.label}</span>
+                      <span className={cn("shrink-0 text-xs", task.done ? "text-ensena-muted" : "text-ensena-primary")}>{task.done ? "Completed" : "Due today"}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4 flex items-center gap-2.5 rounded-xl bg-rose-50 px-3.5 py-3">
+                <TrendingUp className="size-4 shrink-0 text-rose-500" />
+                <p className="text-xs font-medium text-rose-700">{todayDone === todayTasks.length ? "All done for today! 🎉" : "Keep going! You're on track."}</p>
+              </div>
+            </>
+          )}
+        </div>
         <CounsellingCard sessions={data.sessions} nowMs={nowMs} />
       </div>
-
-      <RecommendedTutors tutors={data.recommendedTutors} savedIds={data.savedTutorIds} basis={[me.level, me.course].filter(Boolean).join(" · ")} subjects={me.subjects} />
 
       <div className="mt-6">
         <h2 className="font-heading text-base font-semibold text-ensena-ink">Quick Actions</h2>

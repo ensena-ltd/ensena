@@ -100,6 +100,8 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
 
   function scrollToTab(tab: Tab) {
     setActiveTab(tab);
+    const mobileMatch = mobileTabs.find((t) => t === tab);
+    if (mobileMatch) setMobileTab(mobileMatch);
     document.getElementById(sectionId(tab))?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -321,6 +323,58 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
     }),
   ];
 
+  const mobileActive: MobileClassItem[] = active.map((a) => ({
+    id: a.key,
+    kind: mobileKind[a.kind],
+    subject: a.title,
+    participant: a.personName,
+    avatarSrc: a.personImage,
+    dateLabel: `${a.kind === "private" ? "Next lesson" : "Next class"}: ${mobileDateLabel(a.next.startMs, nowMs)} · ${formatTime(a.next.startMs)}`,
+    timeLabel: a.scheduleLine,
+    statusLabel: "Active",
+    statusTint: statusTint.green,
+    sortMs: a.next.startMs,
+    onDetails: () => setDetailsId(a.next.id),
+    noteText: a.extraLine || undefined,
+    joinHref: a.next.classroomHref ?? undefined,
+    joinDisabledHint: canEnter(a.next) ? undefined : entryHint(a.next) ?? "Not open yet",
+  }));
+
+  const mobilePlanner = (
+    <div className="mt-4 rounded-2xl border border-ensena-border bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-heading text-lg font-semibold text-ensena-ink">Study Planner</h2>
+        <Link href="/student-dashboard/study-planner" className="flex shrink-0 items-center gap-1 text-sm font-semibold text-ensena-primary hover:underline">
+          Full planner <ChevronRight className="size-3.5" />
+        </Link>
+      </div>
+      <p className="mt-0.5 text-sm text-ensena-muted">Plan and tick off your study tasks.</p>
+      {overdue.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Overdue</p>
+          <div className="mt-2">
+            <TaskCheckboxList tasks={overdue} onToggle={toggle} onRemove={remove} empty="" />
+          </div>
+        </div>
+      )}
+      <div className="mt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ensena-muted">Today</p>
+        <div className="mt-2">
+          <TaskCheckboxList tasks={tasksDueOn(tasks, todayISO)} onToggle={toggle} onRemove={remove} empty="Nothing planned for today." />
+        </div>
+      </div>
+      <div className="mt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ensena-muted">This Week</p>
+        <div className="mt-2">
+          <TaskCheckboxList tasks={thisWeek} onToggle={toggle} onRemove={remove} empty="Nothing planned for the rest of the week." />
+        </div>
+      </div>
+      <div className="mt-4 border-t border-ensena-border pt-4">
+        <AddTaskForm onAdd={add} defaultDue={todayISO} showDate />
+      </div>
+    </div>
+  );
+
   const mobileCancelled: MobileClassItem[] = cancelled.map((s) => ({
     id: s.id,
     kind: mobileKind[s.kind],
@@ -338,7 +392,16 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
 
   return (
     <div>
-      <MyClassesMobile upcoming={mobileUpcoming} completed={mobileCompleted} cancelled={mobileCancelled} tab={mobileTab} onTabChange={setMobileTab} />
+      <MyClassesMobile
+        upcoming={mobileUpcoming}
+        active={mobileActive}
+        completed={mobileCompleted}
+        cancelled={mobileCancelled}
+        plannerCount={tasks.filter((t) => !t.done).length}
+        planner={mobilePlanner}
+        tab={mobileTab}
+        onTabChange={setMobileTab}
+      />
 
       <div className="hidden lg:block">
       <div>

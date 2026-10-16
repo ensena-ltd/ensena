@@ -35,6 +35,7 @@ import type { TutorDirectoryEntry, TutorPublicProfile } from "@/lib/tutor-direct
 import { cn } from "@/lib/utils";
 
 import { PersonAvatar } from "./live-shared";
+import { TutorProfileMobile } from "./tutor-profile-mobile";
 import { availabilityLabel, experienceLabel, monthYear, responseLabel, teachingLevels, to12h, tutorTitle, WEEKDAY_LONG } from "./tutor-ui";
 
 const REVIEW_PREVIEW = 3;
@@ -117,8 +118,12 @@ export function TutorProfileReal({
   const reviews = showAllReviews ? t.reviews : t.reviews.slice(0, REVIEW_PREVIEW);
   const helpWith = [...t.teachingFormats.map((f) => formatLabels[f] ?? f), ...t.sessionTypes];
 
+  const similar = !preview && similarTutors.length > 0 ? <SimilarTutors tutors={similarTutors} savedIds={savedIds} /> : null;
+
   return (
-    <div>
+    <>
+    <TutorProfileMobile tutor={t} preview={preview} canMessage={canMessage} nowMs={nowMs} saved={saved} savePending={pending} onToggleSave={toggle} similarTutors={similar} />
+    <div className="hidden lg:block">
       {preview ? (
         <div className="flex items-start gap-2 rounded-2xl bg-indigo-50 p-4 text-sm text-ensena-ink">
           <Eye className="mt-0.5 size-4 shrink-0 text-indigo-500" />
@@ -479,8 +484,9 @@ export function TutorProfileReal({
         </div>
       </div>
 
-      {!preview && similarTutors.length > 0 && <SimilarTutors tutors={similarTutors} savedIds={savedIds} />}
+      {similar}
     </div>
+    </>
   );
 }
 

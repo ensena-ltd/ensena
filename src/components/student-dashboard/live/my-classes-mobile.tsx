@@ -114,10 +114,11 @@ function MobileClassCard({ item }: { item: MobileClassItem }) {
   );
 }
 
-export const mobileTabs = ["Upcoming", "Completed", "Cancelled"] as const;
+export const mobileTabs = ["Upcoming", "Active", "Completed", "Cancelled", "Study Planner"] as const;
 export type MobileTab = (typeof mobileTabs)[number];
+type ClassTab = Exclude<MobileTab, "Study Planner">;
 
-const tabCopy: Record<MobileTab, { heading: string; subtitle: string; empty: ReactNode }> = {
+const tabCopy: Record<ClassTab, { heading: string; subtitle: string; empty: ReactNode }> = {
   Upcoming: {
     heading: "Upcoming Classes",
     subtitle: "Your scheduled learning sessions.",
@@ -128,6 +129,7 @@ const tabCopy: Record<MobileTab, { heading: string; subtitle: string; empty: Rea
       </>
     ),
   },
+  Active: { heading: "Active Classes", subtitle: "Your ongoing lesson series and group classes.", empty: "No active classes right now." },
   Completed: { heading: "Completed Classes", subtitle: "Classes you've already attended.", empty: "No completed classes yet." },
   Cancelled: { heading: "Cancelled Classes", subtitle: "Cancelled bookings are kept here for your records.", empty: "No cancelled classes." },
 };
@@ -137,14 +139,22 @@ const typeFilters = ["All Class Types", "Private Class", "Group Class", "Discove
 
 export function MyClassesMobile({
   upcoming,
+  active,
   completed,
   cancelled,
+  plannerCount,
+  planner,
   tab,
   onTabChange,
 }: {
   upcoming: MobileClassItem[];
+  active: MobileClassItem[];
   completed: MobileClassItem[];
   cancelled: MobileClassItem[];
+  /** Open study tasks, shown as the Study Planner tab's count. */
+  plannerCount: number;
+  /** The Study Planner tab's content. */
+  planner: ReactNode;
   tab: MobileTab;
   onTabChange: (tab: MobileTab) => void;
 }) {
@@ -153,11 +163,13 @@ export function MyClassesMobile({
   const [typeFilter, setTypeFilter] = useState<(typeof typeFilters)[number]>("All Class Types");
   const [sort, setSort] = useState<(typeof sortOptions)[number]>("Upcoming First");
 
-  const byTab: Record<MobileTab, MobileClassItem[]> = { Upcoming: upcoming, Completed: completed, Cancelled: cancelled };
-  const subjects = useMemo(() => Array.from(new Set([...upcoming, ...completed, ...cancelled].map((i) => i.subject))).sort(), [upcoming, completed, cancelled]);
+  const byTab: Record<ClassTab, MobileClassItem[]> = { Upcoming: upcoming, Active: active, Completed: completed, Cancelled: cancelled };
+  const counts: Record<MobileTab, number> = { Upcoming: upcoming.length, Active: active.length, Completed: completed.length, Cancelled: cancelled.length, "Study Planner": plannerCount };
+  const subjects = useMemo(() => Array.from(new Set([...upcoming, ...active, ...completed, ...cancelled].map((i) => i.subject))).sort(), [upcoming, active, completed, cancelled]);
 
+  const isPlanner = tab === "Study Planner";
   const q = query.trim().toLowerCase();
-  const visible = byTab[tab]
+  const visible = (isPlanner ? [] : byTab[tab])
     .filter(
       (i) =>
         (q === "" || i.subject.toLowerCase().includes(q) || i.participant.toLowerCase().includes(q)) &&
@@ -166,7 +178,7 @@ export function MyClassesMobile({
     )
     .sort((a, b) => (sort === "Upcoming First" ? a.sortMs - b.sortMs : b.sortMs - a.sortMs));
 
-  const copy = tabCopy[tab];
+  const copy = isPlanner ? null : tabCopy[tab];
   const selectClass = "h-9 shrink-0 rounded-full border border-ensena-border bg-ensena-surface px-3 text-sm text-ensena-ink";
 
   return (
@@ -176,19 +188,24 @@ export function MyClassesMobile({
         <p className="mt-1 text-sm text-ensena-muted">Your upcoming and ongoing learning sessions.</p>
       </div>
 
-      <div className="mt-5 flex gap-6 border-b border-ensena-border text-sm font-medium">
+      {/* Five tabs don't fit a phone's width, so the row scrolls sideways. */}
+      <div className="mt-5 flex gap-6 overflow-x-auto border-b border-ensena-border text-sm font-medium [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {mobileTabs.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => onTabChange(t)}
-            className={cn("shrink-0 border-b-2 pb-2.5 pt-1 transition-colors", tab === t ? "border-ensena-primary text-ensena-primary" : "border-transparent text-ensena-muted hover:text-ensena-ink")}
+            className={cn("shrink-0 whitespace-nowrap border-b-2 pb-2.5 pt-1 transition-colors", tab === t ? "border-ensena-primary text-ensena-primary" : "border-transparent text-ensena-muted hover:text-ensena-ink")}
           >
-            {t} <span className="text-xs">({byTab[t].length})</span>
+            {t} <span className="text-xs">({counts[t]})</span>
           </button>
         ))}
       </div>
 
+      {isPlanner ? (
+        planner
+      ) : (
+      <>
       <div className="relative mt-4">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ensena-muted" />
         <input
@@ -227,16 +244,18 @@ export function MyClassesMobile({
       </div>
 
       <div className="mt-6">
-        <h2 className="font-heading text-lg font-semibold text-ensena-ink">{copy.heading}</h2>
-        <p className="mt-0.5 text-sm text-ensena-muted">{copy.subtitle}</p>
+        <h2 className="font-heading text-lg font-semibold text-ensena-ink">{copy!.heading}</h2>
+        <p className="mt-0.5 text-sm text-ensena-muted">{copy!.subtitle}</p>
       </div>
 
       <div className="mt-4 flex flex-col gap-3">
         {visible.map((item) => (
           <MobileClassCard key={item.id} item={item} />
         ))}
-        {visible.length === 0 && <p className="rounded-2xl border border-dashed border-ensena-border p-8 text-center text-sm text-ensena-muted">{copy.empty}</p>}
+        {visible.length === 0 && <p className="rounded-2xl border border-dashed border-ensena-border p-8 text-center text-sm text-ensena-muted">{copy!.empty}</p>}
       </div>
+      </>
+      )}
     </div>
   );
 }
