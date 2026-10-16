@@ -126,3 +126,55 @@ This link expires in 1 hour and can only be used once. If you didn't ask to rese
 
   return { subject, html, text };
 }
+
+export function welcomeEmail(input: { name: string; role: "student" | "tutor"; dashboardUrl: string }): Omit<OutgoingEmail, "to"> {
+  const first = input.name.split(" ")[0] || "there";
+  const link = escapeHtml(input.dashboardUrl);
+  const isTutor = input.role === "tutor";
+  const subject = isTutor ? "Welcome to Ensena — let's get you teaching" : "Welcome to Ensena 🎉";
+  const intro = isTutor
+    ? "Thanks for joining Ensena as a tutor. We're excited to have you help learners across Nigeria reach their goals."
+    : "Thanks for joining Ensena. You now have access to one-on-one tutoring, group classes and academic guidance — at your own pace, on your own schedule.";
+  const steps = isTutor
+    ? ["Complete your tutor profile so learners can get to know you.", "Our team will review your application.", "Set your availability and start receiving bookings."]
+    : ["Tell us the subjects you want help with.", "Browse tutors and group classes that fit your level.", "Book your first session and start learning."];
+  const cta = isTutor ? "Go to your Tutor Dashboard" : "Go to your Dashboard";
+
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f7f8fa;font-family:Arial,Helvetica,sans-serif;color:#1f2430;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f8fa;padding:32px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #e7e8ec;border-radius:16px;padding:32px;">
+          <tr><td style="font-size:22px;font-weight:bold;color:#f80248;padding-bottom:24px;">ensena</td></tr>
+          <tr><td style="font-size:18px;font-weight:bold;padding-bottom:12px;">Welcome, ${escapeHtml(first)}!</td></tr>
+          <tr><td style="font-size:15px;line-height:1.6;color:#4b5060;padding-bottom:20px;">${intro}</td></tr>
+          <tr><td style="font-size:15px;font-weight:bold;padding-bottom:8px;">Here's how to get started:</td></tr>
+          <tr><td style="font-size:15px;line-height:1.6;color:#4b5060;padding-bottom:24px;">
+            ${steps.map((s, i) => `${i + 1}. ${s}`).join("<br />")}
+          </td></tr>
+          <tr><td align="center" style="padding-bottom:24px;">
+            <a href="${link}" style="display:inline-block;background:#f80248;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:999px;">${cta}</a>
+          </td></tr>
+          <tr><td style="font-size:12px;line-height:1.6;color:#8a8f9c;">
+            Questions? Just email <a href="mailto:support@ensena.co" style="color:#f80248;">support@ensena.co</a> — we're happy to help.
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+
+  const text = `Welcome, ${first}!
+
+${intro}
+
+Here's how to get started:
+${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}
+
+${cta}: ${input.dashboardUrl}
+
+Questions? Email support@ensena.co — we're happy to help.`;
+
+  return { subject, html, text };
+}

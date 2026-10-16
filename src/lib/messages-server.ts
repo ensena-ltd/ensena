@@ -15,6 +15,8 @@ export interface InboxPerson {
   name: string;
   image: string | null;
   role: string;
+  /** profiles.last_seen_at (refreshed at most every 5 min while they use a dashboard). */
+  lastSeenAtMs: number | null;
 }
 
 export interface InboxConversation {
@@ -29,6 +31,8 @@ export interface InboxConversation {
   archived: boolean;
   /** The next upcoming lesson between the student and this tutor, if any. */
   nextLessonId: string | null;
+  nextLessonSubject: string | null;
+  nextLessonReference: string | null;
 }
 
 export interface ThreadAttachment {
@@ -89,21 +93,21 @@ export async function loadInbox(userId: string): Promise<InboxConversation[]> {
   const lastIds = [...lastByConv.values()].map((m) => m.id as string);
 
   const [{ data: people }, { data: attachRows }, { data: lessons }] = await Promise.all([
-    otherIds.length ? admin.from("profiles").select("id, full_name, avatar_url, role").in("id", otherIds) : { data: [] },
+    otherIds.length ? admin.from("profiles").select("id, full_name, avatar_url, role, last_seen_at").in("id", otherIds) : { data: [] },
     lastIds.length ? admin.from("message_attachments").select("message_id").in("message_id", lastIds) : { data: [] },
     otherIds.length
       ? admin
           .from("private_lessons")
-          .select("id, tutor_id, student_id, scheduled_at")
+          .select("id, tutor_id, student_id, scheduled_at, subject, booking_reference")
           .or(`and(student_id.eq.${userId},tutor_id.in.(${otherIds.join(",")})),and(tutor_id.eq.${userId},student_id.in.(${otherIds.join(",")}))`)
           .neq("status", "Cancelled")
           .gte("scheduled_at", new Date().toISOString())
           .order("scheduled_at")
       : { data: [] },
   ]);
-  const byId = new Map(((people ?? []) as { id: string; full_name: string | null; avatar_url: string | null; role: string }[]).map((p) => [p.id, p]));
+  const byId = new Map(((people ?? []) as { id: string; full_name: string | null; avatar_url: string | null; role: string; last_seen_at: string | null }[]).map((p) => [p.id, p]));
   const withAttachments = new Set(((attachRows ?? []) as { message_id: string }[]).map((a) => a.message_id));
-  const lessonRows = (lessons ?? []) as { id: string; tutor_id: string; student_id: string }[];
+  const lessonRows = (lessons ?? []) as { id: string; tutor_id: string; student_id: string; subject: string | null; booking_reference: string | null }[];
 
   return ((convRows ?? []) as Row[])
     .map((c) => {
@@ -113,7 +117,7 @@ export async function loadInbox(userId: string): Promise<InboxConversation[]> {
         .filter((o) => o.conversation_id === id)
         .map((o) => {
           const p = byId.get(o.user_id);
-          return { id: o.user_id, name: p?.full_name?.trim() || "Ensena user", image: p?.avatar_url ?? null, role: p?.role ?? "" };
+          return { id: o.user_id, name: p?.full_name?.trim() || "Ensena user", image: p?.avatar_url ?? null, role: p?.role ?? "", lastSeenAtMs: p?.last_seen_at ? new Date(p.last_seen_at).getTime() : null };
         });
       const last = lastByConv.get(id);
       const otherIdSet = new Set(people.map((p) => p.id));
@@ -131,6 +135,8 @@ export async function loadInbox(userId: string): Promise<InboxConversation[]> {
         pinned: membership.pinned,
         archived: membership.archived,
         nextLessonId: nextLesson?.id ?? null,
+        nextLessonSubject: nextLesson?.subject ?? null,
+        nextLessonReference: nextLesson?.booking_reference ?? null,
       } satisfies InboxConversation;
     })
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastMessageAtMs - a.lastMessageAtMs);

@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType, User } from "@supabase/supabase-js";
 
 import { recordSignIn } from "@/lib/account-settings";
@@ -6,6 +6,7 @@ import { getSupabaseServerClient as getSupabaseServiceRoleClient } from "@/lib/s
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { dashboardHrefByRole, type AppRole } from "@/lib/supabase/require-role";
 import { safeRedirectPath } from "@/lib/utils";
+import { sendWelcomeEmailIfNew } from "@/lib/welcome-email";
 import { originFromHeaders } from "@/lib/site-url";
 
 // Google's OAuth round-trip creates an auth.users row for ANY Google account
@@ -56,6 +57,23 @@ export async function GET(request: NextRequest) {
     if (error) return NextResponse.redirect(`${origin}/sign-in?error=auth-failed`);
   } else {
     return NextResponse.redirect(`${origin}/sign-in?error=auth-failed`);
+  }
+
+  // A confirmed email sign-up is a finished registration — send the
+  // welcome email (after the redirect; it skips anyone it doesn't apply to).
+  if (otpType !== "recovery" && otpType !== "invite") {
+    const {
+      data: { user: authedUser },
+    } = await supabase.auth.getUser();
+    if (authedUser) {
+      after(async () => {
+        try {
+          console.info(`[welcome-email] ${authedUser.id}: ${await sendWelcomeEmailIfNew(authedUser.id, origin)}`);
+        } catch (err) {
+          console.error(`[welcome-email] ${authedUser.id}: failed`, err);
+        }
+      });
+    }
   }
 
   // Email confirmation, password reset, and the guardian/staff "finish

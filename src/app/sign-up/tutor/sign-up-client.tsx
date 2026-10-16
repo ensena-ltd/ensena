@@ -14,7 +14,7 @@ import { StepPersonalInfo } from "@/components/sign-up/step-personal-info";
 import { StepTeachingProfile } from "@/components/sign-up/step-teaching-profile";
 import { StepQualification } from "@/components/sign-up/step-qualification";
 import { StepTeachingSetup } from "@/components/sign-up/step-teaching-setup";
-import { createTutorPhotoUpload, saveTutorPhoto } from "@/lib/actions/auth";
+import { createTutorPhotoUpload, saveTutorPhoto, sendMyWelcomeEmail } from "@/lib/actions/auth";
 import { setPendingVerificationEmail } from "@/lib/pending-verification";
 import { setCurrentSession } from "@/lib/session-store";
 import { recordSignup } from "@/lib/signup-events-store";
@@ -329,6 +329,7 @@ export function SignUpClient() {
         setSubmitError("Something went wrong saving your tutor profile. Please try again.");
         return;
       }
+      await sendMyWelcomeEmail().catch(() => undefined);
       const photoError = await uploadPhoto(googleUserId);
       setSubmitting(false);
       if (photoError) {
@@ -385,6 +386,7 @@ export function SignUpClient() {
     }
 
     if (data.session) {
+      await sendMyWelcomeEmail().catch(() => undefined);
       router.push("/tutor-dashboard");
       return;
     }

@@ -12,7 +12,7 @@ import { AuthSidePanel } from "@/components/auth/auth-side-panel";
 import { RequiredLabel } from "@/components/sign-up/required-label";
 import { emptyLearningDetails, isLearningDetailsValid, LearningDetailsFields, type LearningDetails } from "@/components/sign-up/learning-details-fields";
 import { GuardianConsentSteps } from "@/components/sign-up/guardian-consent-steps";
-import { requestGuardianConsent, type GuardianDetails } from "@/lib/actions/auth";
+import { requestGuardianConsent, sendMyWelcomeEmail, type GuardianDetails } from "@/lib/actions/auth";
 import { buildContactSupportHref } from "@/lib/support-links";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { safeRedirectPath } from "@/lib/utils";
@@ -124,6 +124,7 @@ export function StudentDetailsClient() {
       setError("Something went wrong setting up your account. Please try again.");
       return;
     }
+    await sendMyWelcomeEmail().catch(() => undefined);
     if (learning.learningFor === "My child") {
       setSubmitting(false);
       setStep(3);

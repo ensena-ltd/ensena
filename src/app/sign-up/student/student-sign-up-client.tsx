@@ -12,7 +12,7 @@ import { AuthSidePanel } from "@/components/auth/auth-side-panel";
 import { RequiredLabel } from "@/components/sign-up/required-label";
 import { emptyLearningDetails, isLearningDetailsValid, LearningDetailsFields, type LearningDetails } from "@/components/sign-up/learning-details-fields";
 import { GuardianConsentSteps } from "@/components/sign-up/guardian-consent-steps";
-import { checkGuardianEmail, requestGuardianConsent, type GuardianDetails } from "@/lib/actions/auth";
+import { checkGuardianEmail, requestGuardianConsent, sendMyWelcomeEmail, type GuardianDetails } from "@/lib/actions/auth";
 import { setPendingVerificationEmail } from "@/lib/pending-verification";
 import { buildContactSupportHref } from "@/lib/support-links";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -129,6 +129,8 @@ export function StudentSignUpClient() {
     setPendingVerificationEmail(email.trim());
     // Trust the browser they registered on (no login alert for it later).
     await rememberThisSignupDevice(data.user.id).catch(() => undefined);
+    // Confirmation disabled → already registered; otherwise /auth/callback sends it.
+    if (data.session) await sendMyWelcomeEmail().catch(() => undefined);
     return { userId: data.user.id, hasSession: !!data.session };
   }
 

@@ -44,7 +44,13 @@ export function usePageViewTracking(): void {
 
   useEffect(() => {
     if (!pathname || lastTracked.current === pathname) return;
+    const isInitialLoad = lastTracked.current === null;
     lastTracked.current = pathname;
+    // The TikTok Pixel snippet in the root layout already fires `page` on the
+    // initial load, so only client-side navigations are forwarded here.
+    if (!isInitialLoad) {
+      (window as Window & { ttq?: { page: () => void } }).ttq?.page();
+    }
     try {
       const visitorId = getOrCreateId(window.localStorage, VISITOR_ID_KEY);
       const sessionId = getOrCreateId(window.sessionStorage, SESSION_ID_KEY);

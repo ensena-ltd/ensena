@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Heart, MapPin, Search } from "lucide-react";
+import { BadgeCheck, Heart, MapPin, MessageSquare, Search, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,9 @@ export function SavedTutorsReal({ tutors }: { tutors: SavedTutorCard[] }) {
   }
 
   return (
-    <div>
+    <>
+      <SavedTutorsMobile tutors={tutors} removing={removing} onRemove={remove} />
+      <div className="hidden lg:block">
       <h1 className="font-heading text-2xl font-semibold text-ensena-ink">Saved Tutors</h1>
       <p className="mt-1 text-sm text-ensena-muted">Tutors you&apos;ve saved to come back to.</p>
 
@@ -69,6 +71,68 @@ export function SavedTutorsReal({ tutors }: { tutors: SavedTutorCard[] }) {
                 <span className="text-sm font-semibold text-ensena-ink">{t.pricePerHour ? `₦${Number(t.pricePerHour).toLocaleString("en-NG")}/hr` : ""}</span>
                 <Button variant="outline" loading={removing === t.tutorId} onClick={() => remove(t)} className="h-9 rounded-full border-ensena-border px-4 text-xs font-semibold text-rose-600 hover:bg-rose-50">
                   <Heart className="size-3.5 fill-rose-600" /> Remove
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      </div>
+    </>
+  );
+}
+
+// Mobile (below lg, where the bottom tab bar shows) — the wishlist layout
+// from the mobile design: count in the subtitle, a quiet empty state and
+// compact cards with Message / View Profile.
+function SavedTutorsMobile({ tutors, removing, onRemove }: { tutors: SavedTutorCard[]; removing: string | null; onRemove: (t: SavedTutorCard) => void }) {
+  return (
+    <div className="lg:hidden">
+      <h1 className="font-heading text-2xl font-semibold text-ensena-ink">Saved Tutors</h1>
+      <p className="mt-1 text-sm text-ensena-muted">Your tutor wishlist: {tutors.length} saved.</p>
+
+      {tutors.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-32 text-center">
+          <Heart className="size-8 text-ensena-border" />
+          <p className="text-sm font-medium text-ensena-ink">You haven&apos;t saved any tutors yet.</p>
+          <Link href="/student-dashboard/find-a-tutor" className="text-sm font-semibold text-ensena-primary hover:underline">Browse tutors →</Link>
+        </div>
+      ) : (
+        <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
+          {tutors.map((t) => (
+            <div key={t.tutorId} className="rounded-2xl border border-ensena-border bg-ensena-surface p-5">
+              <div className="flex items-start justify-between gap-2">
+                <Link href={`/student-dashboard/tutors/${t.tutorId}`} className="flex min-w-0 items-center gap-3">
+                  <span className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ensena-primary/10 font-semibold text-ensena-primary">
+                    {t.image ? <Image src={t.image} alt={t.name} fill sizes="56px" className="object-cover" /> : t.name[0]}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1 text-sm font-semibold text-ensena-ink">
+                      <span className="truncate">{t.name}</span> {t.status === "approved" && <BadgeCheck className="size-3.5 shrink-0 text-ensena-primary" aria-label="Verified tutor" />}
+                    </p>
+                    <p className="truncate text-xs text-ensena-muted">{t.subjects.slice(0, 2).join(", ") || t.headline}</p>
+                  </div>
+                </Link>
+                <button type="button" disabled={removing === t.tutorId} onClick={() => onRemove(t)} aria-label={`Remove ${t.name} from saved tutors`} className="disabled:opacity-50">
+                  <Heart className="size-5 fill-ensena-primary text-ensena-primary" />
+                </button>
+              </div>
+              <p className="mt-3 flex items-center gap-1 text-sm text-ensena-ink">
+                <Star className="size-3.5 fill-amber-400 text-amber-400" />
+                {t.rating !== null ? `${t.rating} (${t.reviewCount} review${t.reviewCount === 1 ? "" : "s"})` : "New tutor"}
+              </p>
+              <div className="mt-1 flex items-center justify-between text-sm">
+                <span className="font-semibold text-ensena-ink">{t.pricePerHour ? `₦${Number(t.pricePerHour).toLocaleString("en-NG")}/hr` : ""}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                <Link
+                  href={`/student-dashboard/messages?tutor=${t.tutorId}`}
+                  className="flex items-center justify-center gap-1 rounded-full border border-ensena-border py-1.5 text-xs font-medium text-ensena-ink hover:bg-ensena-bg-soft"
+                >
+                  <MessageSquare className="size-3.5" /> Message
+                </Link>
+                <Button nativeButton={false} render={<Link href={`/student-dashboard/tutors/${t.tutorId}`} />} className="h-auto rounded-full bg-ensena-primary py-1.5 text-xs font-semibold text-white">
+                  View Profile
                 </Button>
               </div>
             </div>

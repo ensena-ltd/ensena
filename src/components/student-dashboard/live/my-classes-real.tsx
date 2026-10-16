@@ -40,6 +40,7 @@ import {
   tasksDueOn,
 } from "./learning-utils";
 import { AddTaskForm, PersonAvatar, ReviewModal, TaskCheckboxList, useLiveNow, useStudyTasks } from "./live-shared";
+import { MyClassesMobile, mobileDateLabel, mobileTabs, type MobileClassItem, type MobileClassKind, type MobileTab } from "./my-classes-mobile";
 import { RescheduleModal } from "./reschedule-modal";
 
 const tabs = ["Upcoming", "Active", "Completed", "Cancelled", "Study Planner"] as const;
@@ -86,6 +87,7 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
   const nowMs = useLiveNow(data.generatedAtMs);
   const { tasks, toggle, add, remove } = useStudyTasks(data.studyTasks);
   const [activeTab, setActiveTab] = useState<Tab>("Upcoming");
+  const [mobileTab, setMobileTab] = useState<MobileTab>("Upcoming");
   const [manageId, setManageId] = useState<string | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
@@ -107,6 +109,8 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
     const match = tabs.find((t) => t === searchParams.get("tab"));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing UI from the URL on navigation; also scrolls
     if (match) scrollToTab(match);
+    const mobileMatch = mobileTabs.find((t) => t === searchParams.get("tab"));
+    if (mobileMatch) setMobileTab(mobileMatch);
     const view = searchParams.get("view");
     if (view) setDetailsId(view);
   }, [searchParams]);
@@ -251,8 +255,92 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
   const overdue = tasks.filter((t) => !t.done && t.dueDate !== null && t.dueDate < todayISO);
   const thisWeek = tasksDueBetween(tasks, todayISO, weekEnd);
 
+  // ── Mobile cards (MyClassesMobile) — same sessions and actions as the
+  // desktop sections, shaped for the mobile card design.
+  const mobileKind: Record<LearningSession["kind"], MobileClassKind> = { private: "Private Class", group: "Group Class", discovery: "Discovery Session", counselling: "Counselling" };
+  const statusTint = { green: "bg-emerald-100 text-emerald-700", amber: "bg-amber-100 text-amber-700", rose: "bg-rose-100 text-rose-700", grey: "bg-ensena-bg-soft text-ensena-muted" };
+
+  const mobileUpcoming: MobileClassItem[] = upcoming.map((s) => {
+    const unpaid = isUnpaid(s);
+    const live = s.startMs <= nowMs;
+    return {
+      id: s.id,
+      kind: mobileKind[s.kind],
+      subject: s.title,
+      participant: s.personName,
+      avatarSrc: s.personImage,
+      dateLabel: mobileDateLabel(s.startMs, nowMs),
+      timeLabel: `${formatTime(s.startMs)} (${s.durationMinutes} min)`,
+      statusLabel: unpaid ? "Awaiting Payment" : live ? "Live Now" : "Upcoming",
+      statusTint: unpaid ? statusTint.amber : statusTint.green,
+      sortMs: s.startMs,
+      onDetails: () => setDetailsId(s.id),
+      noteText: unpaid ? `Pay ${formatNaira(s.price)} to keep this booking.` : undefined,
+      joinHref: s.classroomHref ?? undefined,
+      joinDisabledHint: canEnter(s) ? undefined : entryHint(s) ?? "Not open yet",
+      primaryAction: unpaid ? { label: "Pay now", onClick: () => pay(s), loading: payingId === s.id } : undefined,
+    };
+  });
+
+  const mobileCompleted: MobileClassItem[] = [
+    ...awaiting.map((s): MobileClassItem => ({
+      id: s.id,
+      kind: mobileKind[s.kind],
+      subject: s.title,
+      participant: s.personName,
+      avatarSrc: s.personImage,
+      dateLabel: mobileDateLabel(s.startMs, nowMs),
+      timeLabel: formatTime(s.startMs),
+      statusLabel: "Awaiting Tutor",
+      statusTint: statusTint.grey,
+      sortMs: s.startMs,
+      onDetails: () => setDetailsId(s.id),
+    })),
+    ...data.completed.map((c): MobileClassItem => {
+      const badge = completionBadge(c, nowMs);
+      const needsConfirm = c.confirmationStatus === "Pending" && c.bookingType === "private";
+      return {
+        id: c.id,
+        kind: c.bookingType === "private" ? "Private Class" : "Group Class",
+        subject: c.subject,
+        participant: c.tutorName,
+        avatarSrc: c.tutorImage,
+        dateLabel: mobileDateLabel(c.completedAtMs, nowMs),
+        timeLabel: formatTime(c.completedAtMs),
+        statusLabel: badge.label,
+        statusTint: badge.tint,
+        sortMs: c.completedAtMs,
+        onDetails: () => setDetailsId(c.id),
+        noteText: c.review ? `You rated ${c.review.rating}/5` : undefined,
+        primaryAction: needsConfirm
+          ? { label: "Confirm Lesson", onClick: () => confirm(c), loading: confirmingId === c.id }
+          : c.reviewable && !c.review
+            ? { label: "Leave Review", onClick: () => setReviewing(c) }
+            : undefined,
+      };
+    }),
+  ];
+
+  const mobileCancelled: MobileClassItem[] = cancelled.map((s) => ({
+    id: s.id,
+    kind: mobileKind[s.kind],
+    subject: s.title,
+    participant: s.personName,
+    avatarSrc: s.personImage,
+    dateLabel: mobileDateLabel(s.startMs, nowMs),
+    timeLabel: formatTime(s.startMs),
+    statusLabel: "Cancelled",
+    statusTint: statusTint.rose,
+    sortMs: s.startMs,
+    onDetails: () => setDetailsId(s.id),
+    noteText: [s.cancellationReason, (s.refundAmount ?? 0) > 0 ? `Refund ${formatNaira(s.refundAmount!)}` : null].filter(Boolean).join(" · ") || undefined,
+  }));
+
   return (
     <div>
+      <MyClassesMobile upcoming={mobileUpcoming} completed={mobileCompleted} cancelled={mobileCancelled} tab={mobileTab} onTabChange={setMobileTab} />
+
+      <div className="hidden lg:block">
       <div>
         <h1 className="font-heading text-2xl font-semibold text-ensena-ink">My Classes</h1>
         <p className="mt-1 text-sm text-ensena-muted">All your classes, sessions and learning activities in one place.</p>
@@ -565,6 +653,7 @@ export function MyClassesReal({ data }: { data: StudentLearningSnapshot }) {
             </Link>
           </div>
         </div>
+      </div>
       </div>
 
       <ManageLessonSheet

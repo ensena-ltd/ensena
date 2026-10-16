@@ -10,6 +10,7 @@ import { dashboardHrefByRole, type AppRole } from "@/lib/supabase/require-role";
 import { guardianConsentEmail, isResendConfigured, passwordResetEmail, sendEmail } from "@/lib/resend";
 import { notifyUser } from "@/lib/notifications";
 import { safeRedirectPath } from "@/lib/utils";
+import { sendWelcomeEmailIfNew } from "@/lib/welcome-email";
 import { requestOrigin } from "@/lib/site-url-server";
 
 export interface SignInState {
@@ -420,4 +421,27 @@ export async function finishPasswordReset(): Promise<{ ok: boolean }> {
   }
   await supabase.auth.signOut({ scope: "global" });
   return { ok: true };
+}
+
+// ── Welcome email ──────────────────────────────────────────────────────
+
+// Called by the sign-up pages once a signed-in student/tutor finishes
+// registering (Google sign-ups, and email sign-ups that get a session
+// straight away). Email-confirmation sign-ups are handled in
+// /auth/callback. Sends after the response so the page isn't held up;
+// sendWelcomeEmailIfNew makes sure it only goes out once.
+export async function sendMyWelcomeEmail(): Promise<void> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  const origin = await requestOrigin();
+  after(async () => {
+    try {
+      console.info(`[welcome-email] ${user.id}: ${await sendWelcomeEmailIfNew(user.id, origin)}`);
+    } catch (err) {
+      console.error(`[welcome-email] ${user.id}: failed`, err);
+    }
+  });
 }

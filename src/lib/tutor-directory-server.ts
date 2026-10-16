@@ -151,7 +151,7 @@ function toEntry(id: string, person: Person | undefined, app: TutorApplicationFi
   };
 }
 
-async function publishedRatings(tutorIds: string[]): Promise<Map<string, number[]>> {
+export async function publishedRatings(tutorIds: string[]): Promise<Map<string, number[]>> {
   const map = new Map<string, number[]>();
   if (tutorIds.length === 0) return map;
   const { data } = await getServiceRoleClient()

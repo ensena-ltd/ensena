@@ -46,6 +46,7 @@ import { setTutorSaved } from "@/lib/actions/student-profile";
 import { canEnterClassroom, getClassEntryState, STUDENT_ENTRY_WINDOW_MS } from "@/lib/class-entry-access";
 import { formatCountdown, reminderStageFor } from "@/lib/escrow-release";
 import { formatNaira } from "@/lib/format";
+import { PLATFORM_TIMEZONE } from "@/lib/platform-time";
 import { buildStudentAccountMenuItems } from "@/lib/student-dashboard-data";
 import type { CompletedLesson, LearningSession, RecommendedTutor, StudentLearningSnapshot } from "@/lib/student-learning-server";
 import { cn } from "@/lib/utils";
@@ -634,6 +635,12 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
         </div>
       )}
 
+      {/* Mobile only, between the study plan and recommendations (the
+          mobile design's order). Desktop is unchanged. */}
+      <div className="lg:hidden">
+        <CounsellingCard sessions={data.sessions} nowMs={nowMs} />
+      </div>
+
       <RecommendedTutors tutors={data.recommendedTutors} savedIds={data.savedTutorIds} basis={[me.level, me.course].filter(Boolean).join(" · ")} subjects={me.subjects} />
 
       <div className="mt-6">
@@ -683,6 +690,80 @@ export function StudentDashboardReal({ data }: { data: StudentLearningSnapshot }
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// The student's next counselling session (or, once they've had one, a
+// way back in). Hidden for students who've never booked counselling.
+function CounsellingCard({ sessions, nowMs }: { sessions: LearningSession[]; nowMs: number }) {
+  const counselling = sessions.filter((s) => s.kind === "counselling");
+  const next = counselling.filter((s) => isUpcoming(s, nowMs)).sort((a, b) => a.startMs - b.startMs)[0];
+  const lastPast = counselling.filter((s) => s.status === "completed" || (s.status === "scheduled" && s.endMs <= nowMs)).sort((a, b) => b.startMs - a.startMs)[0];
+  if (!next && !lastPast) return null;
+
+  if (!next) {
+    return (
+      <div className="mt-6 rounded-2xl border border-ensena-border bg-ensena-surface p-5">
+        <h2 className="font-heading text-base font-semibold text-ensena-ink">Counselling</h2>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-ensena-muted">Session completed</p>
+        <p className="text-sm font-medium text-ensena-ink">{lastPast!.personName} · {formatShortDate(lastPast!.startMs)}</p>
+        <div className="mt-3 flex flex-col gap-2">
+          <Button nativeButton={false} render={<Link href={`/student-dashboard/lessons?view=${lastPast!.id}`} />} className="h-10 flex-1 rounded-full bg-ensena-primary text-sm font-semibold text-white hover:bg-[var(--ensena-primary-hover)]">
+            View Counselling →
+          </Button>
+          <Button variant="outline" nativeButton={false} render={<Link href="/student-dashboard/counselling" />} className="h-10 flex-1 rounded-full border-ensena-border text-sm font-medium">
+            Book Another Session
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const entryState = getClassEntryState({ startMs: next.startMs, endMs: next.endMs, role: "student", nowMs });
+  const enterable = canEnterClassroom(entryState);
+  const live = next.startMs <= nowMs;
+  const startingSoon = !live && entryState === "entry-available" && next.startMs - nowMs <= 15 * 60_000;
+  const hint = entryState === "too-early" ? entryOpensHint(next.startMs - STUDENT_ENTRY_WINDOW_MS, nowMs, "Session") : entryState === "ended" ? "This session has ended" : undefined;
+  const dateLabel = new Intl.DateTimeFormat("en-US", { timeZone: PLATFORM_TIMEZONE, month: "short", day: "numeric", year: "numeric" }).format(next.startMs);
+
+  return (
+    <div className="mt-6 rounded-2xl border border-ensena-border bg-ensena-surface p-5">
+      <h2 className="font-heading text-base font-semibold text-ensena-ink">Counselling</h2>
+      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-ensena-muted">Your next session</p>
+      <div className="mt-2 flex items-center gap-3">
+        <PersonAvatar name={next.personName} image={next.personImage} className="size-11" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-ensena-ink">{next.personName}</p>
+          <p className="truncate text-xs text-ensena-muted">Ensena Academic Counsellor</p>
+        </div>
+        {startingSoon ? (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+            <span className="size-1.5 animate-pulse rounded-full bg-rose-600" /> Starting soon
+          </span>
+        ) : (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            <span className="size-1.5 rounded-full bg-current" /> {live ? "In Progress" : "Confirmed"}
+          </span>
+        )}
+      </div>
+      <p className="mt-3 text-sm font-semibold text-ensena-ink">{dateLabel}</p>
+      <p className="flex items-center gap-1.5 text-xs text-ensena-muted">
+        <Clock className="size-3.5" /> {formatTime(next.startMs)} – {formatTime(next.endMs)} · Video Call
+      </p>
+      <div className="mt-4 flex flex-col gap-2">
+        <Button
+          disabled={!enterable || !next.classroomHref}
+          {...(enterable && next.classroomHref ? { nativeButton: false, render: <Link href={next.classroomHref} /> } : {})}
+          className="h-11 flex-1 rounded-full bg-ensena-primary text-sm font-semibold text-white hover:bg-[var(--ensena-primary-hover)]"
+        >
+          <Video className="size-4" /> Enter Session
+        </Button>
+      </div>
+      {!enterable && hint && <p className="mt-2 text-xs font-medium text-ensena-primary">{hint}</p>}
+      <Link href={`/student-dashboard/lessons?view=${next.id}`} className="mt-2.5 inline-flex text-xs font-semibold text-ensena-primary hover:underline">
+        View Counselling Details →
+      </Link>
     </div>
   );
 }

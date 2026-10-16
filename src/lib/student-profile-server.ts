@@ -4,6 +4,7 @@
 // client, always filtered to the signed-in student's own rows.
 import { getSupabaseServerClient as getServiceRoleClient } from "@/lib/supabase";
 import { normalizeTutorStatus, parseTutorApplication, type TutorApplicationStatus } from "@/lib/tutor-application";
+import { publishedRatings } from "@/lib/tutor-directory-server";
 
 export interface StudentReview {
   id: string;
@@ -25,6 +26,9 @@ export interface SavedTutorCard {
   country: string;
   status: TutorApplicationStatus;
   savedAt: string;
+  /** Average of published student reviews, null when there are none. */
+  rating: number | null;
+  reviewCount: number;
 }
 
 export async function loadReviewsAboutStudent(studentId: string): Promise<StudentReview[]> {
@@ -56,15 +60,17 @@ export async function loadSavedTutors(studentId: string): Promise<SavedTutorCard
     const rows = (saved ?? []) as { tutor_id: string; created_at: string }[];
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.tutor_id);
-    const [{ data: people }, { data: tutors }] = await Promise.all([
+    const [{ data: people }, { data: tutors }, ratings] = await Promise.all([
       admin.from("profiles").select("id, full_name, email, avatar_url").in("id", ids),
       admin.from("tutor_profiles").select("id, application_status, application_data").in("id", ids),
+      publishedRatings(ids),
     ]);
     return rows.flatMap((r) => {
       const p = (people as { id: string; full_name: string | null; email: string; avatar_url: string | null }[] | null)?.find((x) => x.id === r.tutor_id);
       const t = (tutors as { id: string; application_status: string; application_data: Record<string, unknown> | null }[] | null)?.find((x) => x.id === r.tutor_id);
       if (!p || !t) return [];
       const app = parseTutorApplication(t.application_data);
+      const scores = ratings.get(r.tutor_id) ?? [];
       return [
         {
           tutorId: r.tutor_id,
@@ -77,6 +83,8 @@ export async function loadSavedTutors(studentId: string): Promise<SavedTutorCard
           country: [app.stateCity, app.country].filter(Boolean).join(", "),
           status: normalizeTutorStatus(t.application_status),
           savedAt: r.created_at,
+          rating: scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null,
+          reviewCount: scores.length,
         },
       ];
     });

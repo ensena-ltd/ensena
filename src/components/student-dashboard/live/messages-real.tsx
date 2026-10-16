@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -85,6 +85,12 @@ const tutorInbox: InboxVariant = {
   lessonHref: (id) => `/tutor-dashboard/private-lessons/${id}`,
 };
 
+// last_seen_at is refreshed at most every 5 minutes while someone uses
+// their dashboard, so "seen in the last 10 minutes" reads as online.
+const ONLINE_WINDOW_MS = 10 * 60_000;
+const isOnline = (p: InboxConversation["others"][number] | undefined, nowMs: number) => !!p?.lastSeenAtMs && nowMs > 0 && nowMs - p.lastSeenAtMs < ONLINE_WINDOW_MS;
+const contextOf = (c: InboxConversation) => [roleLabel(c.others[0]?.role ?? ""), c.contextLabel].filter((v, i, a) => v && a.indexOf(v) === i).join(" · ");
+
 function listTime(ms: number, nowMs: number): string {
   const day = relativeDay(ms, nowMs);
   return day === "Today" ? formatTime(ms) : day;
@@ -110,6 +116,9 @@ export function MessagesReal({
   role?: "student" | "tutor";
 }) {
   const variant = role === "tutor" ? tutorInbox : studentInbox;
+  // The student mobile design (full-page inbox, booking bar, compact
+  // composer). The tutor dashboard keeps its existing mobile layout.
+  const mobileDesign = role === "student";
   const router = useRouter();
   const [inbox, setInbox] = useState(initialInbox);
   const [activeId, setActiveId] = useState<string | null>(initialActiveId);
@@ -290,11 +299,99 @@ export function MessagesReal({
       </div>
       <div className="lg:hidden">
         {mobileView === "list" || !active ? (
-          <div className="flex flex-col rounded-2xl border border-ensena-border bg-ensena-surface">{list}</div>
+          mobileDesign ? (
+            <MobileConversationList
+              conversations={visible}
+              selfId={selfId}
+              nowMs={nowMs}
+              query={query}
+              setQuery={setQuery}
+              onOpen={(id) => void openConversation(id)}
+              emptyInbox={inbox.length === 0}
+              variant={variant}
+            />
+          ) : (
+            <div className="flex flex-col rounded-2xl border border-ensena-border bg-ensena-surface">{list}</div>
+          )
         ) : (
-          <div className="fixed inset-x-0 top-14 bottom-0 z-50 flex flex-col bg-ensena-surface">{chat}</div>
+          <div className={cn("fixed inset-x-0 top-14 bottom-0 z-50 flex flex-col", mobileDesign ? "bg-white" : "bg-ensena-surface")}>{mobileDesign && isValidElement<{ mobile?: boolean }>(chat) ? cloneElement(chat, { mobile: true }) : chat}</div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Student mobile inbox: page heading, search and one card of conversations.
+function MobileConversationList({
+  conversations,
+  selfId,
+  nowMs,
+  query,
+  setQuery,
+  onOpen,
+  emptyInbox,
+  variant,
+}: {
+  conversations: InboxConversation[];
+  selfId: string;
+  nowMs: number;
+  query: string;
+  setQuery: (q: string) => void;
+  onOpen: (id: string) => void;
+  emptyInbox: boolean;
+  variant: InboxVariant;
+}) {
+  return (
+    <div>
+      <h1 className="font-heading text-2xl font-semibold text-ensena-ink">Messages</h1>
+      <p className="mt-1 text-sm text-ensena-muted">{variant.subtitle}</p>
+      <div className="relative mt-4">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ensena-muted" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search conversations…" aria-label="Search conversations" className="h-11 w-full rounded-full border border-ensena-border bg-ensena-surface pl-10 pr-4 text-sm text-ensena-ink" />
+      </div>
+      {emptyInbox ? (
+        <div className="mt-4 flex flex-col items-center gap-2 rounded-2xl border border-ensena-border bg-ensena-surface p-8 text-center">
+          <MessageSquare className="size-8 text-ensena-muted" />
+          <p className="font-heading text-base font-semibold text-ensena-ink">No messages yet</p>
+          <p className="max-w-xs text-sm text-ensena-muted">{variant.emptyHint}</p>
+          {variant.emptyCta && (
+            <Link href={variant.emptyCta.href} className="mt-2 rounded-full bg-ensena-primary px-4 py-2 text-sm font-semibold text-white">
+              {variant.emptyCta.label}
+            </Link>
+          )}
+        </div>
+      ) : (
+        <ul className="mt-4 flex flex-col divide-y divide-ensena-border rounded-2xl border border-ensena-border bg-ensena-surface">
+          {conversations.map((c) => {
+            const person = c.others[0];
+            return (
+              <li key={c.id}>
+                <button type="button" onClick={() => onOpen(c.id)} className="flex w-full items-start gap-3 p-4 text-left">
+                  <span className="relative shrink-0">
+                    <PersonAvatar name={person?.name ?? titleOf(c)} image={person?.image ?? null} className="size-11" />
+                    {isOnline(person, nowMs) && <span className="absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-white bg-emerald-500" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="flex min-w-0 items-center gap-1 text-sm font-semibold text-ensena-ink">
+                        {c.pinned && <Pin className="size-3 shrink-0 text-ensena-muted" />}
+                        <span className="truncate">{titleOf(c)}</span>
+                      </p>
+                      {nowMs > 0 && <span className="shrink-0 text-[11px] text-ensena-muted">{listTime(c.lastMessage?.createdAtMs ?? c.lastMessageAtMs, nowMs)}</span>}
+                    </div>
+                    <p className="truncate text-xs text-ensena-muted">{contextOf(c)}</p>
+                    <p className="mt-0.5 truncate text-sm text-ensena-muted">{previewOf(c, selfId)}</p>
+                  </div>
+                  {c.unread > 0 && (
+                    <span className="mt-1 flex size-5 shrink-0 items-center justify-center rounded-full bg-ensena-primary text-[11px] font-semibold text-white">{c.unread > 9 ? "9+" : c.unread}</span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+          {conversations.length === 0 && <p className="p-4 text-center text-sm text-ensena-muted">No conversations here.</p>}
+        </ul>
+      )}
     </div>
   );
 }
@@ -408,6 +505,7 @@ function AttachmentView({ a, mine }: { a: ThreadAttachment; mine: boolean }) {
 }
 
 function ChatPanel({
+  mobile = false,
   conversation: c,
   thread,
   outgoing,
@@ -418,6 +516,8 @@ function ChatPanel({
   onToggleFlag,
   onSend,
 }: {
+  /** Student mobile design: Online status, booking bar, time inside bubbles, compact composer. */
+  mobile?: boolean;
   variant: InboxVariant;
   conversation: InboxConversation;
   thread: Thread | undefined;
@@ -455,12 +555,20 @@ function ChatPanel({
         <button type="button" aria-label="Back to Messages" onClick={onBack} className="text-ensena-ink lg:hidden">
           <ArrowLeft className="size-5" />
         </button>
-        <PersonAvatar name={person?.name ?? titleOf(c)} image={person?.image ?? null} className="size-10" />
+        <span className="relative shrink-0">
+          <PersonAvatar name={person?.name ?? titleOf(c)} image={person?.image ?? null} className={mobile ? "size-11" : "size-10"} />
+          {mobile && isOnline(person, nowMs) && <span className="absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-white bg-emerald-500" />}
+        </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-ensena-ink">{titleOf(c)}</p>
-          <p className="truncate text-xs text-ensena-muted">{[roleLabel(person?.role ?? ""), c.contextLabel].filter((v, i, a) => v && a.indexOf(v) === i).join(" · ")}</p>
+          <p className="flex min-w-0 items-center gap-1 text-xs text-ensena-muted">
+            <span className="truncate">{contextOf(c)}</span>
+            {mobile && isOnline(person, nowMs) && (
+              <span className="ml-1 flex shrink-0 items-center gap-1 text-emerald-600"><span className="size-1.5 rounded-full bg-emerald-500" /> Online</span>
+            )}
+          </p>
         </div>
-        {c.nextLessonId && (
+        {c.nextLessonId && !mobile && (
           <Link href={variant.lessonHref(c.nextLessonId)} className="hidden h-9 shrink-0 items-center rounded-full border border-ensena-primary px-4 text-sm font-semibold text-ensena-primary hover:bg-ensena-primary/5 sm:flex">
             View next class
           </Link>
@@ -476,7 +584,7 @@ function ChatPanel({
                   {personLink.label}
                 </Link>
               )}
-              {c.nextLessonId && (
+              {c.nextLessonId && !mobile && (
                 <Link href={variant.lessonHref(c.nextLessonId)} className="block rounded-lg px-3 py-2 text-sm text-ensena-ink hover:bg-ensena-bg-soft sm:hidden">
                   View next class
                 </Link>
@@ -491,6 +599,22 @@ function ChatPanel({
           )}
         </div>
       </div>
+
+      {mobile && c.nextLessonId && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ensena-border bg-ensena-bg-soft/60 px-4 py-2.5 text-xs text-ensena-muted">
+          <div>
+            <p>{c.nextLessonSubject ? `${c.nextLessonSubject} · Private Class` : "Private Class"}</p>
+            {c.nextLessonReference && (
+              <p className="mt-0.5">
+                Booking ID: <span className="font-mono font-semibold text-ensena-ink">{c.nextLessonReference}</span>
+              </p>
+            )}
+          </div>
+          <Link href={variant.lessonHref(c.nextLessonId)} className="flex h-8 shrink-0 items-center justify-center rounded-full border border-ensena-primary px-3.5 text-xs font-semibold text-ensena-primary">
+            View Class
+          </Link>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4">
         {!thread ? (
@@ -540,13 +664,25 @@ function ChatPanel({
                         ))}
                       </div>
                     )}
-                    {m.body && (
-                      <div className={cn("max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm text-ensena-ink sm:max-w-[70%]", mine ? "bg-ensena-primary/10" : "bg-ensena-bg-soft")}>{m.body}</div>
+                    {mobile && m.body ? (
+                      <div className={cn("max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm text-ensena-ink", mine ? "bg-ensena-primary/10" : "bg-ensena-bg-soft")}>
+                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                        <p className="mt-1 flex items-center justify-end gap-1 text-[10px] text-ensena-muted">
+                          {formatTime(m.createdAtMs)}
+                          {mine && <span className={read ? "text-ensena-primary" : ""} aria-label={read ? "Read" : "Sent"}>{read ? "✓✓" : "✓"}</span>}
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {m.body && (
+                          <div className={cn("max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm text-ensena-ink sm:max-w-[70%]", mine ? "bg-ensena-primary/10" : "bg-ensena-bg-soft")}>{m.body}</div>
+                        )}
+                        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-ensena-muted">
+                          {formatTime(m.createdAtMs)}
+                          {mine && <span className={read ? "text-ensena-primary" : ""}>{read ? "✓✓ Read" : "✓ Sent"}</span>}
+                        </p>
+                      </>
                     )}
-                    <p className="mt-0.5 flex items-center gap-1 text-[10px] text-ensena-muted">
-                      {formatTime(m.createdAtMs)}
-                      {mine && <span className={read ? "text-ensena-primary" : ""}>{read ? "✓✓ Read" : "✓ Sent"}</span>}
-                    </p>
                     {m.reaction && <span className="mt-1 rounded-full border border-ensena-border bg-ensena-surface px-2 py-0.5 text-xs">{m.reaction}</span>}
                   </div>
                 </div>
@@ -557,12 +693,12 @@ function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      <Composer conversationId={c.id} onSend={onSend} />
+      <Composer conversationId={c.id} onSend={onSend} compact={mobile} />
     </>
   );
 }
 
-function Composer({ conversationId, onSend }: { conversationId: string; onSend: (body: string, files: PendingFile[]) => Promise<boolean> }) {
+function Composer({ conversationId, onSend, compact = false }: { conversationId: string; onSend: (body: string, files: PendingFile[]) => Promise<boolean>; compact?: boolean }) {
   // ?draft= pre-fills the box (a request started from a tutor profile).
   const initialDraft = useSearchParams().get("draft") ?? "";
   const [draft, setDraft] = useState(initialDraft.slice(0, 1000));
@@ -632,8 +768,14 @@ function Composer({ conversationId, onSend }: { conversationId: string; onSend: 
     });
   }
 
+  const emojiButton = (
+    <button type="button" aria-label="Add emoji" onClick={() => setEmojiOpen((v) => !v)} className={cn("flex shrink-0 items-center justify-center rounded-full text-ensena-muted hover:bg-ensena-bg-soft", compact ? "size-9" : "size-10")}>
+      <Smile className={compact ? "size-4" : "size-4.5"} />
+    </button>
+  );
+
   return (
-    <div className="border-t border-ensena-border p-3">
+    <div className={cn("border-t border-ensena-border p-3", compact && "pb-[calc(0.75rem+env(safe-area-inset-bottom))]")}>
       {files.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
           {files.map((f) => (
@@ -648,15 +790,13 @@ function Composer({ conversationId, onSend }: { conversationId: string; onSend: 
         </div>
       )}
       <div className="relative flex items-end gap-2">
-        <button type="button" aria-label="Attach a file" onClick={() => fileInputRef.current?.click()} className="flex size-10 shrink-0 items-center justify-center rounded-full text-ensena-muted hover:bg-ensena-bg-soft">
-          <Paperclip className="size-4.5" />
+        <button type="button" aria-label="Attach a file" onClick={() => fileInputRef.current?.click()} className={cn("flex shrink-0 items-center justify-center rounded-full text-ensena-muted hover:bg-ensena-bg-soft", compact ? "size-9" : "size-10")}>
+          <Paperclip className={compact ? "size-4" : "size-4.5"} />
         </button>
         <input ref={fileInputRef} type="file" multiple accept={ALLOWED_TYPES.join(",")} className="hidden" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} />
-        <button type="button" aria-label="Add emoji" onClick={() => setEmojiOpen((v) => !v)} className="flex size-10 shrink-0 items-center justify-center rounded-full text-ensena-muted hover:bg-ensena-bg-soft">
-          <Smile className="size-4.5" />
-        </button>
+        {!compact && emojiButton}
         {emojiOpen && (
-          <div className="absolute bottom-12 left-0 z-30">
+          <div className={cn("absolute bottom-12 z-30", compact ? "right-0" : "left-0")}>
             <EmojiPicker onSelect={insertEmoji} onClose={() => setEmojiOpen(false)} />
           </div>
         )}
@@ -674,13 +814,17 @@ function Composer({ conversationId, onSend }: { conversationId: string; onSend: 
           maxLength={4000}
           placeholder="Type a message…"
           aria-label="Message"
-          className="max-h-32 min-h-10 flex-1 resize-none rounded-2xl border border-ensena-border bg-ensena-surface px-3.5 py-2.5 text-sm text-ensena-ink outline-none placeholder:text-ensena-muted focus:border-ensena-primary/50"
+          className={cn(
+            "max-h-32 min-h-10 flex-1 resize-none border border-ensena-border bg-ensena-surface py-2.5 text-sm text-ensena-ink outline-none placeholder:text-ensena-muted focus:border-ensena-primary/50",
+            compact ? "rounded-full px-4" : "rounded-2xl px-3.5"
+          )}
         />
+        {compact && emojiButton}
         <button type="button" aria-label="Send" disabled={!canSend} onClick={() => void submit()} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ensena-primary text-white disabled:opacity-40">
           {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
         </button>
       </div>
-      <p className="mt-1.5 px-1 text-[11px] text-ensena-muted">Keep contact details and payments on Ensena. Messages sharing phone numbers, emails or outside links are blocked.</p>
+      <p className={cn("mt-1.5 px-1 text-[11px] text-ensena-muted", compact && "hidden")}>Keep contact details and payments on Ensena. Messages sharing phone numbers, emails or outside links are blocked.</p>
     </div>
   );
 }
