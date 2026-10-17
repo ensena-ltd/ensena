@@ -31,7 +31,9 @@ interface LiveNotifications {
 
 const Ctx = createContext<LiveNotifications | null>(null);
 
-export function StudentNotificationsProvider({ initial, children }: { initial: StudentNotificationRow[]; children: ReactNode }) {
+// Also used by the tutor dashboard (TutorNotificationsProvider below) —
+// the rows are just "my notifications"; only the fallback link differs.
+export function StudentNotificationsProvider({ initial, fallbackHref = "/student-dashboard/notifications", children }: { initial: StudentNotificationRow[]; fallbackHref?: string; children: ReactNode }) {
   const router = useRouter();
   const [notifications, setNotifications] = useState(initial);
   const [nowMs, setNowMs] = useState(0);
@@ -61,9 +63,9 @@ export function StudentNotificationsProvider({ initial, children }: { initial: S
         setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, unread: false } : x)));
         void markMyNotificationRead(n.id);
       }
-      router.push(n.actionUrl || "/student-dashboard/notifications");
+      router.push(n.actionUrl || fallbackHref);
     },
-    [router]
+    [router, fallbackHref]
   );
 
   const markAllRead = useCallback(() => {
@@ -81,6 +83,14 @@ export function StudentNotificationsProvider({ initial, children }: { initial: S
     [notifications, nowMs, open, markAllRead]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function TutorNotificationsProvider({ initial, children }: { initial: StudentNotificationRow[]; children: ReactNode }) {
+  return (
+    <StudentNotificationsProvider initial={initial} fallbackHref="/tutor-dashboard">
+      {children}
+    </StudentNotificationsProvider>
+  );
 }
 
 /** The live notifications, or null outside a signed-in student dashboard (demo mode). */

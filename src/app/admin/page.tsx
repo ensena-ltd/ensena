@@ -2,6 +2,8 @@ import Link from "next/link";
 import { GraduationCap, HeartHandshake, ShieldCheck, Users2 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 const workspaces = [
   {
@@ -30,11 +32,26 @@ const workspaces = [
   },
 ];
 
-export default function AdminRootPage() {
+// First name of whoever is signed in (profiles.full_name, falling back to
+// the part of their email before the @), or null when nobody is.
+async function signedInFirstName(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+  const name = (profile?.full_name as string | null)?.trim() || user.email?.split("@")[0] || "";
+  return name.split(" ")[0] || null;
+}
+
+export default async function AdminRootPage() {
+  const firstName = await signedInFirstName();
   return (
     <div className="flex min-h-screen flex-col items-center bg-ensena-bg-soft px-6 py-16">
       <Logo />
-      <h1 className="mt-8 font-heading text-2xl font-semibold text-ensena-ink">Welcome back, Cynthia</h1>
+      <h1 className="mt-8 font-heading text-2xl font-semibold text-ensena-ink">{firstName ? `Welcome back, ${firstName}` : "Welcome back"}</h1>
       <p className="mt-1 text-sm text-ensena-muted">Choose a workspace</p>
 
       <div className="mt-8 grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">

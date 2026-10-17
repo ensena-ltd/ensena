@@ -5,12 +5,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
-  Bell,
   Calendar,
   ChevronDown,
   LayoutDashboard,
   LogOut,
-  Menu,
   MessageSquare,
   Star,
   User,
@@ -23,12 +21,10 @@ import { Logo } from "@/components/logo";
 import { SignOutLink } from "@/components/auth/sign-out-link";
 import { VerifiedTutorBadge } from "@/components/shared/verified-tutor-badge";
 import { isTutorVerified, useTutorIdentity } from "@/components/tutor-dashboard/tutor-identity";
+import { TutorMobileTopbar } from "@/components/tutor-dashboard/tutor-mobile-topbar";
 import { Button } from "@/components/ui/button";
-import { useLessonConfirmations } from "@/hooks/use-lesson-confirmations";
 import { useTutorMessages } from "@/hooks/use-messages";
 import { useTutorRating } from "@/hooks/use-reviews";
-import { useTutorNotifications } from "@/hooks/use-tutor-notifications";
-import { isDispute } from "@/lib/escrow-release";
 import { totalUnreadForTutor } from "@/lib/messages-store";
 import { dashboardTutor, sidebarNavItems } from "@/lib/tutor-dashboard-data";
 import { cn } from "@/lib/utils";
@@ -69,90 +65,11 @@ export function DashboardSidebar() {
 
   const messages = useTutorMessages();
   const unreadMessages = totalUnreadForTutor(messages);
-  const { lessons } = useLessonConfirmations();
-  const { notifications, markAllRead } = useTutorNotifications();
-  const [notifOpen, setNotifOpen] = useState(false);
-  const myLessons = lessons.filter((l) => l.tutor === me.name);
-  // Same derivation as TutorTopBar's confirmationEvents (desktop) — kept in
-  // sync here so the mobile dropdown shows the identical entries, not just
-  // the identical badge count.
-  const confirmationEvents = myLessons
-    .filter((l) => l.confirmationStatus === "Pending" || isDispute(l))
-    .sort((a, b) => b.completedAt - a.completedAt)
-    .slice(0, 6)
-    .map((l) => ({
-      id: l.id,
-      text: isDispute(l)
-        ? `${l.student} reported an issue with your ${l.type === "Group" ? "group class" : "lesson"} session.`
-        : `Your ${l.type === "Group" ? "group class" : "lesson"} session with ${l.student} has ended. Earnings become available after the confirmation period if no issue is reported.`,
-    }));
-  const recentNotifications = notifications.slice(0, 6);
-  const notifCount = recentNotifications.filter((n) => n.unread).length + confirmationEvents.length;
 
   return (
     <>
-      <div className="flex items-center justify-between border-b border-ensena-border bg-white px-4 py-3 lg:hidden">
-        <button
-          type="button"
-          aria-label="Open menu"
-          onClick={() => setMobileOpen(true)}
-          className="flex size-10 items-center justify-center rounded-full text-ensena-ink hover:bg-ensena-bg-soft"
-        >
-          <Menu className="size-5" />
-        </button>
-        <Logo />
-        <div className="flex items-center gap-1">
-          <div className="relative">
-            <button
-              type="button"
-              aria-label="Notifications"
-              onClick={() => {
-                setNotifOpen((v) => !v);
-                if (!notifOpen) markAllRead();
-              }}
-              className="relative flex size-9 items-center justify-center rounded-full text-ensena-ink hover:bg-ensena-bg-soft"
-            >
-              <Bell className="size-5" />
-              {notifCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-ensena-primary text-[9px] font-semibold text-white">
-                  {notifCount}
-                </span>
-              )}
-            </button>
-            {notifOpen && (
-              <div className="absolute right-0 top-11 z-30 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-ensena-border bg-white p-2 shadow-lg">
-                <ul className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-                  {recentNotifications.map((n) =>
-                    n.actionUrl ? (
-                      <li key={n.id}>
-                        <Link href={n.actionUrl} onClick={() => setNotifOpen(false)} className="block rounded-xl px-2.5 py-2 text-xs text-ensena-ink hover:bg-ensena-bg-soft">
-                          {n.text}
-                        </Link>
-                      </li>
-                    ) : (
-                      <li key={n.id} className="rounded-xl px-2.5 py-2 text-xs text-ensena-ink hover:bg-ensena-bg-soft">{n.text}</li>
-                    )
-                  )}
-                  {confirmationEvents.map((e) => (
-                    <li key={e.id} className="rounded-xl px-2.5 py-2 text-xs text-ensena-ink hover:bg-ensena-bg-soft">{e.text}</li>
-                  ))}
-                  {recentNotifications.length === 0 && confirmationEvents.length === 0 && (
-                    <li className="px-2.5 py-4 text-center text-xs text-ensena-muted">No new notifications.</li>
-                  )}
-                </ul>
-                <Link href="/tutor-dashboard/escrow" onClick={() => setNotifOpen(false)} className="block px-2.5 py-1.5 text-xs font-medium text-ensena-primary hover:underline">
-                  View earnings &amp; disputes
-                </Link>
-              </div>
-            )}
-          </div>
-          <Link href="/tutor-dashboard/profile" aria-label="Profile" className="flex items-center">
-            <span className="relative size-8 shrink-0 overflow-hidden rounded-full">
-              <Image src={me.image} alt={me.name} fill sizes="32px" className="object-cover" />
-            </span>
-          </Link>
-        </div>
-      </div>
+      {/* Mobile top bar (logo, bell, avatar menu), per the mobile design. */}
+      <TutorMobileTopbar />
 
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />

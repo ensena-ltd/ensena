@@ -19,6 +19,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.9",
     "jsqr": "^1.4.0",
     "libphonenumber-js": "^1.13.12",
     "lucide-react": "^1.23.0",

@@ -12,6 +12,7 @@ import {
   BookUser,
   CalendarCheck,
   ChevronDown,
+  ClipboardList,
   CreditCard,
   Flag,
   Headset,
@@ -83,6 +84,17 @@ const navItems: NavItem[] = [
     ],
   },
   { label: "User Directory", href: "/admin/user-directory", icon: BookUser, sectionKey: "Users" },
+  {
+    label: "Waitlist",
+    href: "/admin/waitlist",
+    icon: ClipboardList,
+    sectionKey: "Users",
+    children: [
+      { label: "All Sign-ups", href: "/admin/waitlist" },
+      { label: "Student Waitlist", href: "/admin/waitlist?tab=Student Waitlist" },
+      { label: "Tutor Circle", href: "/admin/waitlist?tab=Tutor Circle" },
+    ],
+  },
   {
     label: "Tutor Verification",
     href: "/admin/verification",

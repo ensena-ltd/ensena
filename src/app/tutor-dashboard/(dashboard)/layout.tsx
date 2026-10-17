@@ -5,6 +5,8 @@ import { DashboardSidebar } from "@/components/tutor-dashboard/dashboard-sidebar
 import { TutorBottomNav } from "@/components/tutor-dashboard/tutor-bottom-nav";
 import { TutorIdentityProvider, type TutorDocument, type TutorIdentityRow } from "@/components/tutor-dashboard/tutor-identity";
 import { TutorVerificationGate } from "@/components/tutor-dashboard/tutor-verification-gate";
+import { TutorNotificationsProvider } from "@/components/student-dashboard/live/notifications-live";
+import { loadStudentNotifications as loadUserNotifications, type StudentNotificationRow } from "@/lib/student-notifications-server";
 import { accountIdForName } from "@/lib/account-status-store";
 import { requireRole } from "@/lib/supabase/require-role";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -20,13 +22,19 @@ export default async function TutorDashboardLayout({ children }: { children: Rea
   const profile = await requireRole("tutor");
 
   let identity: TutorIdentityRow | null = null;
+  let notifications: StudentNotificationRow[] | null = null;
+  let unreadMessages: number | undefined;
   if (profile) {
     const supabase = await getSupabaseServerClient();
-    const [{ data: account }, { data: tutor }, { data: documents }] = await Promise.all([
+    const [{ data: account }, { data: tutor }, { data: documents }, notificationRows, { data: inbox }] = await Promise.all([
       supabase.from("profiles").select("phone, date_of_birth, created_at").eq("id", profile.id).maybeSingle(),
       supabase.from("tutor_profiles").select("phone, date_of_birth, application_status, application_data, rejection_reason, resubmission_fields").eq("id", profile.id).maybeSingle(),
       supabase.from("tutor_verification_documents").select("doc_type, file_name, storage_path, status, uploaded_at").eq("tutor_id", profile.id),
+      loadUserNotifications(profile.id),
+      supabase.from("conversation_participants").select("unread_count").eq("user_id", profile.id).eq("archived", false),
     ]);
+    notifications = notificationRows;
+    unreadMessages = ((inbox ?? []) as { unread_count: number }[]).reduce((n, r) => n + (r.unread_count ?? 0), 0);
     identity = {
       id: profile.id,
       fullName: profile.fullName,
@@ -47,8 +55,7 @@ export default async function TutorDashboardLayout({ children }: { children: Rea
 
   const tutorAccountId = accountIdForName("tutor", identity?.fullName ?? dashboardTutor.name);
 
-  return (
-    <TutorIdentityProvider row={identity}>
+  const page = (
       <div className="flex min-h-screen flex-col bg-ensena-bg-soft lg:flex-row">
         <DashboardSidebar />
         <main className="min-w-0 flex-1 px-4 py-4 pb-20 sm:px-6 sm:py-6 lg:px-8 lg:py-8 lg:pb-8">
@@ -59,8 +66,14 @@ export default async function TutorDashboardLayout({ children }: { children: Rea
             <TutorVerificationGate>{children}</TutorVerificationGate>
           </div>
         </main>
-        <TutorBottomNav />
+        <TutorBottomNav unreadMessages={unreadMessages} />
       </div>
+  );
+
+  return (
+    <TutorIdentityProvider row={identity}>
+      {/* Live notifications (mobile bell) only for a signed-in tutor; demo mode keeps its own stores. */}
+      {notifications ? <TutorNotificationsProvider initial={notifications}>{page}</TutorNotificationsProvider> : page}
     </TutorIdentityProvider>
   );
 }

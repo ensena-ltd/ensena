@@ -25,10 +25,12 @@ const items = [
 // Mobile-only bottom tab bar, shared across every tutor-dashboard page (not
 // a per-page redesign of the desktop sidebar — a purpose-built mobile nav,
 // matching the pattern used throughout the rest of this app).
-export function TutorBottomNav() {
+// `unreadMessages`: the real count for a signed-in tutor (from the layout);
+// demo mode falls back to the local messages store.
+export function TutorBottomNav({ unreadMessages: liveUnread }: { unreadMessages?: number }) {
   const pathname = usePathname();
   const messages = useTutorMessages();
-  const unreadMessages = totalUnreadForTutor(messages);
+  const unreadMessages = liveUnread ?? totalUnreadForTutor(messages);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-ensena-border bg-ensena-surface px-1 py-1.5 lg:hidden">
@@ -50,7 +52,7 @@ export function TutorBottomNav() {
               <Icon className="size-5" />
               {item.label === "Messages" && unreadMessages > 0 && (
                 <span className="absolute -top-1 -right-1.5 flex size-3.5 items-center justify-center rounded-full bg-ensena-primary text-[8px] font-semibold text-white">
-                  {unreadMessages}
+                  {unreadMessages > 9 ? "9+" : unreadMessages}
                 </span>
               )}
             </span>
